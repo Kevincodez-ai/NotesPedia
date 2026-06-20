@@ -41,17 +41,7 @@ export default function Home() {
     checkAuth();
   }, [setUser]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        useAppStore.getState().setCommandPaletteOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  // Keyboard shortcut Ctrl+K is handled by CommandPalette component
 
   const renderPage = () => {
     if (isLoading) {
@@ -73,8 +63,13 @@ export default function Home() {
         return <DashboardPage />;
       case 'notes':
         return <NotesPage />;
-      case 'note-detail':
-        return <NoteDetailPage noteId={pageParams.id!} />;
+      case 'note-detail': {
+        const noteId = pageParams.id;
+        if (!noteId) {
+          return <DashboardPage />;
+        }
+        return <NoteDetailPage noteId={noteId} />;
+      }
       case 'upload':
         return <UploadPage />;
       case 'bookmarks':
@@ -91,8 +86,13 @@ export default function Home() {
         return <AdminPage />;
       case 'settings':
         return <SettingsPage />;
-      case 'profile':
-        return <ProfilePage userId={pageParams.id!} />;
+      case 'profile': {
+        const userId = pageParams.id;
+        if (!userId) {
+          return <DashboardPage />;
+        }
+        return <ProfilePage userId={userId} />;
+      }
       default:
         return <DashboardPage />;
     }

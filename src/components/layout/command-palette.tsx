@@ -2,7 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   FileText,
@@ -58,7 +58,7 @@ const quickActions = [
 const recentSearches = ['Data Structures notes', 'Machine Learning PDF', 'Operating Systems'];
 
 export function CommandPalette() {
-  const { commandPaletteOpen, setCommandPaletteOpen, navigate } = useAppStore();
+  const { commandPaletteOpen, setCommandPaletteOpen, navigate, user } = useAppStore();
   const [recentSearch, setRecentSearch] = React.useState<string[]>(recentSearches);
 
   // Keyboard shortcut Ctrl+K / Cmd+K is already handled in page.tsx
@@ -103,7 +103,13 @@ export function CommandPalette() {
           {quickActions.map((action) => (
             <CommandItem
               key={action.title}
-              onSelect={() => runCommand(() => navigate(action.page))}
+              onSelect={() => runCommand(() => {
+                if (action.page === 'profile') {
+                  navigate('profile', { id: user?.id });
+                } else {
+                  navigate(action.page);
+                }
+              })}
               className="cursor-pointer"
             >
               <action.icon className="size-4 text-primary" />

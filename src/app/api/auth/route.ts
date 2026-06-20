@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { hashPassword, verifyPassword, generateToken, setAuthCookie } from '@/lib/auth';
+import { hashPassword, verifyPassword, generateToken, setAuthCookie, getAuthUser, removeAuthCookie } from '@/lib/auth';
 import { z } from 'zod';
 
 const signupSchema = z.object({
@@ -98,7 +98,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'logout') {
-      const { removeAuthCookie } = await import('@/lib/auth');
       await removeAuthCookie();
       return NextResponse.json({ success: true });
     }
@@ -115,9 +114,8 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    const { getAuthUser } = await import('@/lib/auth');
     const user = await getAuthUser();
-    
+
     if (!user) {
       return NextResponse.json({ success: false, user: null });
     }
@@ -125,5 +123,103 @@ export async function GET() {
     return NextResponse.json({ success: true, user });
   } catch {
     return NextResponse.json({ success: false, user: null });
+  }
+}
+
+const updateProfileSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').optional(),
+  bio: z.string().max(500, 'Bio must be at most 500 characters').optional(),
+  avatarUrl: z.string().url('Invalid avatar URL').optional(),
+  collegeId: z.string().optional(),
+  departmentId: z.string().optional(),
+  semester: z.number().int().min(1).max(12).optional(),
+});
+
+export async function PUT(request: NextRequest) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const data = updateProfileSchema.parse(body);
+
+    // Update User table fields
+    const userUpdateData: { name?: string; bio?: string; avatarUrl?: string } = {};
+    if (data.name !== undefined) userUpdateData.name = data.name;
+    if (data.bio !== undefined) userUpdateData.bio = data.bio;
+    if (data.avatarUrl !== undefined) userUpdateData.avatarUrl = data.avatarUrl;
+
+    if (Object.keys(userUpdateData).length > 0) {
+      await db.user.update({
+        where: { id: user.id },
+        data: userUpdateData,
+      });
+    }
+
+    // Update Profile table fields
+    const profileUpdateData: { collegeId?: string | null; departmentId?: string | null; semester?: number | null } = {};
+    if (data.collegeId !== undefined) profileUpdateData.collegeId = data.collegeId || null;
+    if (data.departmentId !== undefined) profileUpdateData.departmentId = data.departmentId || null;
+    if (data.semester !== undefined) profileUpdateData.semester = data.semester;
+
+    if (Object.keys(profileUpdateData).length > 0) {
+      await db.profile.update({
+        where: { userId: user.id },
+        data: profileUpdateData,
+      });
+    }
+
+    // Fetch updated user
+    const updatedUser = await db.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        bio: true,
+        role: true,
+        emailVerified: true,
+        profile: {
+          include: {
+            college: { select: { id: true, name: true, shortName: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({ success: true, user: updatedUser });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ success: false, error: error.errors[0].message }, { status: 400 });
+    }
+    console.error('Profile update error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to update profile' }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Deactivate the user account
+    await db.user.update({
+      where: { id: user.id },
+      data: { isActive: false },
+    });
+
+    // Remove auth cookie
+    await removeAuthCookie();
+
+    return NextResponse.json({ success: true, message: 'Account deactivated successfully' });
+  } catch (error) {
+    console.error('Account deactivation error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to deactivate account' }, { status: 500 });
   }
 }

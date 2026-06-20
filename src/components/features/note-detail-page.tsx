@@ -44,6 +44,8 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { NoteDetail, CommentData, FlashcardData, MCQData } from '@/types';
+import { toast } from 'sonner';
+import { formatRelativeTime as formatRelativeTimeBase } from '@/components/features/note-card';
 
 // ── Animation variants ──────────────────────────────────────────
 const fadeIn = {
@@ -56,15 +58,7 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function formatRelativeTime(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
+const formatRelativeTime = formatRelativeTimeBase;
 
 function formatFileSize(bytes?: number | null) {
   if (!bytes) return '';
@@ -108,6 +102,8 @@ function RatingWidget({ noteId, currentRating, avgRating, ratingCount }: { noteI
         {[1, 2, 3, 4, 5].map((star) => (
           <button
             key={star}
+            type="button"
+            aria-label={`Rate ${star} stars`}
             className="p-0.5 hover:scale-125 transition-transform"
             onMouseEnter={() => setHoverRating(star)}
             onMouseLeave={() => setHoverRating(0)}
@@ -323,6 +319,7 @@ function MCQQuiz({ mcqs }: { mcqs: MCQData[] }) {
               return (
                 <motion.button
                   key={opt.key}
+                  type="button"
                   whileHover={!showResult ? { scale: 1.01 } : undefined}
                   whileTap={!showResult ? { scale: 0.99 } : undefined}
                   className={`w-full text-left rounded-xl px-4 py-3 transition-all ${optionClass}`}
@@ -801,7 +798,12 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
             {isBookmarked ? 'Bookmarked' : 'Bookmark'}
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => {
-            navigator.clipboard.writeText(window.location.href);
+            const message = `Check out '${note.title}' on NotesPedia!`;
+            navigator.clipboard.writeText(message).then(() => {
+              toast.success('Link copied to clipboard!');
+            }).catch(() => {
+              toast.error('Failed to copy');
+            });
           }}>
             <Share2 className="size-4" /> Share
           </Button>

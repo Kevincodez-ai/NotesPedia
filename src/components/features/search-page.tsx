@@ -38,6 +38,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import type { NoteCard, NoteFileType } from '@/types';
+import { formatRelativeTime, fileTypeIcon, fileTypeLabel, fileTypeColor } from '@/components/features/note-card';
 
 // ── Animation variants ──────────────────────────────────────────
 const gridContainer = {
@@ -48,35 +49,6 @@ const gridItem = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
-
-// ── Helpers ─────────────────────────────────────────────────────
-function formatRelativeTime(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function fileTypeIcon(type?: string | null) {
-  switch (type) {
-    case 'pdf': return '📕';
-    case 'docx': return '📘';
-    case 'pptx': return '📙';
-    case 'txt': return '📄';
-    case 'md': return '📝';
-    case 'image': return '🖼️';
-    default: return '📋';
-  }
-}
-
-function fileTypeLabel(type?: string | null) {
-  const labels: Record<string, string> = { pdf: 'PDF', docx: 'DOCX', pptx: 'PPTX', txt: 'TXT', md: 'MD', image: 'Image' };
-  return type ? labels[type] || type.toUpperCase() : 'FILE';
-}
 
 // ── Local Storage for recent searches ───────────────────────────
 const RECENT_KEY = 'notespedia-recent-searches';
@@ -140,13 +112,7 @@ function NoteCardItem({ note, onClick, onBookmark }: { note: NoteCard; onClick: 
       onClick={onClick}
     >
       <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
-        <div className={`h-1 w-full ${
-          note.fileType === 'pdf' ? 'bg-red-400' :
-          note.fileType === 'docx' ? 'bg-blue-400' :
-          note.fileType === 'pptx' ? 'bg-orange-400' :
-          note.fileType === 'md' ? 'bg-purple-400' :
-          'bg-emerald-400'
-        }`} />
+        <div className={`h-1 w-full ${fileTypeColor(note.fileType)}`} />
         <CardContent className="p-4 space-y-3">
           <div className="flex items-start gap-3">
             <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
@@ -361,7 +327,9 @@ export function SearchPage() {
           body: JSON.stringify({ noteId: note.id }),
         });
       }
+      queryClient.invalidateQueries({ queryKey: ['notes'] });
       queryClient.invalidateQueries({ queryKey: ['search'] });
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     } catch {
       // Silently fail
     }

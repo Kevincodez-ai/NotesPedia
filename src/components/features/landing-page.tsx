@@ -114,10 +114,10 @@ export function LandingPage() {
           </div>
 
           <nav className="hidden items-center gap-6 md:flex">
-            <button onClick={() => navigate('features')} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Features
             </button>
-            <button onClick={() => navigate('pricing')} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Pricing
             </button>
             <button onClick={() => navigate('search')} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
@@ -182,7 +182,7 @@ export function LandingPage() {
                   Get Started Free
                   <ArrowRight className="ml-2 size-5" />
                 </Button>
-                <Button size="lg" variant="outline" onClick={() => navigate('features')} className="h-12 px-8 text-base">
+                <Button size="lg" variant="outline" onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="h-12 px-8 text-base">
                   Learn More
                 </Button>
               </div>
@@ -195,7 +195,7 @@ export function LandingPage() {
         </section>
 
         {/* Features Grid */}
-        <section className="border-t bg-muted/30 py-20 sm:py-28">
+        <section id="features" className="border-t bg-muted/30 py-20 sm:py-28">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -335,9 +335,9 @@ export function LandingPage() {
                 <ul className="space-y-2">
                   {links.map((link) => (
                     <li key={link}>
-                      <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+                      <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                         {link}
-                      </button>
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -352,15 +352,15 @@ export function LandingPage() {
               &copy; {new Date().getFullYear()} NotesPedia. All rights reserved.
             </p>
             <div className="flex items-center gap-4">
-              <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+              <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                 Privacy
-              </button>
-              <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+              </span>
+              <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                 Terms
-              </button>
-              <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+              </span>
+              <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                 Cookies
-              </button>
+              </span>
             </div>
           </div>
         </div>

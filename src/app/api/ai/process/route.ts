@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, hasRole } from '@/lib/auth';
 
 const SYSTEM_PROMPT = 'You are an expert academic assistant. Help students learn effectively. Always respond with valid JSON as requested. Do not include markdown code fences or extra text.';
 
@@ -54,6 +54,11 @@ export async function POST(request: NextRequest) {
 
     if (!note) {
       return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
+    }
+
+    // IDOR check: only the owner or admin/moderator can process a note
+    if (note.uploaderId !== user.id && !hasRole(user.role, ['admin', 'moderator'])) {
+      return NextResponse.json({ success: false, error: 'Forbidden. You can only process your own notes.' }, { status: 403 });
     }
 
     if (!note.extractedText && !note.description) {

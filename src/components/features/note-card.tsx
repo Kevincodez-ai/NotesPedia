@@ -257,4 +257,4 @@ export function NoteCardGridSkeleton({ count = 6 }: { count?: number }) {
 }
 
 // ── Re-export helpers for convenience ───────────────────────────
-export { fileTypeIcon, fileTypeLabel, fileTypeColorBar, formatRelativeTime };
+export { fileTypeIcon, fileTypeLabel, fileTypeColorBar as fileTypeColor, fileTypeColorBar, formatRelativeTime };

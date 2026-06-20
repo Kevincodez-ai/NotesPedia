@@ -1,0 +1,753 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import React, { useState, useCallback, useRef } from 'react';
+     4→     4→import { useQuery, useQueryClient } from '@tanstack/react-query';
+     5→     5→import { useAppStore } from '@/store/app-store';
+     6→     6→import { motion, AnimatePresence } from 'framer-motion';
+     7→     7→import {
+     8→     8→  Search,
+     9→     9→  X,
+    10→    10→  SlidersHorizontal,
+    11→    11→  Download,
+    12→    12→  Star,
+    13→    13→  Eye,
+    14→    14→  Bookmark,
+    15→    15→  ChevronLeft,
+    16→    16→  ChevronRight,
+    17→    17→  TrendingUp,
+    18→    18→  Clock,
+    19→    19→  FileText,
+    20→    20→  Sparkles,
+    21→    21→} from 'lucide-react';
+    22→    22→import { Card, CardContent } from '@/components/ui/card';
+    23→    23→import { Button } from '@/components/ui/button';
+    24→    24→import { Badge } from '@/components/ui/badge';
+    25→    25→import { Skeleton } from '@/components/ui/skeleton';
+    26→    26→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    27→    27→import { Input } from '@/components/ui/input';
+    28→    28→import {
+    29→    29→  Select,
+    30→    30→  SelectContent,
+    31→    31→  SelectItem,
+    32→    32→  SelectTrigger,
+    33→    33→  SelectValue,
+    34→    34→} from '@/components/ui/select';
+    35→    35→import {
+    36→    36→  Collapsible,
+    37→    37→  CollapsibleContent,
+    38→    38→  CollapsibleTrigger,
+    39→    39→} from '@/components/ui/collapsible';
+    40→    40→import type { NoteCard, NoteFileType } from '@/types';
+    41→    41→
+    42→    42→// ── Animation variants ──────────────────────────────────────────
+    43→    43→const gridContainer = {
+    44→    44→  hidden: { opacity: 0 },
+    45→    45→  show: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
+    46→    46→};
+    47→    47→const gridItem = {
+    48→    48→  hidden: { opacity: 0, y: 20 },
+    49→    49→  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    50→    50→};
+    51→    51→
+    52→    52→// ── Helpers ─────────────────────────────────────────────────────
+    53→    53→function formatRelativeTime(dateStr: string) {
+    54→    54→  const diff = Date.now() - new Date(dateStr).getTime();
+    55→    55→  const mins = Math.floor(diff / 60000);
+    56→    56→  if (mins < 60) return `${mins}m ago`;
+    57→    57→  const hrs = Math.floor(mins / 60);
+    58→    58→  if (hrs < 24) return `${hrs}h ago`;
+    59→    59→  const days = Math.floor(hrs / 24);
+    60→    60→  if (days < 30) return `${days}d ago`;
+    61→    61→  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    62→    62→}
+    63→    63→
+    64→    64→function fileTypeIcon(type?: string | null) {
+    65→    65→  switch (type) {
+    66→    66→    case 'pdf': return '📕';
+    67→    67→    case 'docx': return '📘';
+    68→    68→    case 'pptx': return '📙';
+    69→    69→    case 'txt': return '📄';
+    70→    70→    case 'md': return '📝';
+    71→    71→    case 'image': return '🖼️';
+    72→    72→    default: return '📋';
+    73→    73→  }
+    74→    74→}
+    75→    75→
+    76→    76→function fileTypeLabel(type?: string | null) {
+    77→    77→  const labels: Record<string, string> = { pdf: 'PDF', docx: 'DOCX', pptx: 'PPTX', txt: 'TXT', md: 'MD', image: 'Image' };
+    78→    78→  return type ? labels[type] || type.toUpperCase() : 'FILE';
+    79→    79→}
+    80→    80→
+    81→    81→// ── Local Storage for recent searches ───────────────────────────
+    82→    82→const RECENT_KEY = 'notespedia-recent-searches';
+    83→    83→
+    84→    84→function getRecentSearches(): string[] {
+    85→    85→  if (typeof window === 'undefined') return [];
+    86→    86→  try {
+    87→    87→    const stored = localStorage.getItem(RECENT_KEY);
+    88→    88→    return stored ? JSON.parse(stored) : [];
+    89→    89→  } catch {
+    90→    90→    return [];
+    91→    91→  }
+    92→    92→}
+    93→    93→
+    94→    94→function addRecentSearch(query: string) {
+    95→    95→  if (!query.trim()) return;
+    96→    96→  try {
+    97→    97→    const recent = getRecentSearches().filter((s) => s !== query.trim());
+    98→    98→    recent.unshift(query.trim());
+    99→    99→    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, 8)));
+   100→   100→  } catch {
+   101→   101→    // Silently fail
+   102→   102→  }
+   103→   103→}
+   104→   104→
+   105→   105→function clearRecentSearches() {
+   106→   106→  try {
+   107→   107→    localStorage.removeItem(RECENT_KEY);
+   108→   108→  } catch {
+   109→   109→    // Silently fail
+   110→   110→  }
+   111→   111→}
+   112→   112→
+   113→   113→// ── Fetchers ────────────────────────────────────────────────────
+   114→   114→async function fetchSearch(params: Record<string, string>) {
+   115→   115→  const qs = new URLSearchParams(params).toString();
+   116→   116→  const res = await fetch(`/api/search?${qs}`);
+   117→   117→  if (!res.ok) throw new Error('Failed to search');
+   118→   118→  return res.json();
+   119→   119→}
+   120→   120→
+   121→   121→async function fetchColleges() {
+   122→   122→  const res = await fetch('/api/colleges?limit=100');
+   123→   123→  if (!res.ok) throw new Error('Failed');
+   124→   124→  return res.json();
+   125→   125→}
+   126→   126→
+   127→   127→async function fetchSubjects() {
+   128→   128→  const res = await fetch('/api/subjects?limit=100');
+   129→   129→  if (!res.ok) throw new Error('Failed');
+   130→   130→  return res.json();
+   131→   131→}
+   132→   132→
+   133→   133→// ── Note Card ───────────────────────────────────────────────────
+   134→   134→function NoteCardItem({ note, onClick, onBookmark }: { note: NoteCard; onClick: () => void; onBookmark: (e: React.MouseEvent) => void }) {
+   135→   135→  return (
+   136→   136→    <motion.div
+   137→   137→      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+   138→   138→      whileTap={{ scale: 0.98 }}
+   139→   139→      className="cursor-pointer"
+   140→   140→      onClick={onClick}
+   141→   141→    >
+   142→   142→      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
+   143→   143→        <div className={`h-1 w-full ${
+   144→   144→          note.fileType === 'pdf' ? 'bg-red-400' :
+   145→   145→          note.fileType === 'docx' ? 'bg-blue-400' :
+   146→   146→          note.fileType === 'pptx' ? 'bg-orange-400' :
+   147→   147→          note.fileType === 'md' ? 'bg-purple-400' :
+   148→   148→          'bg-emerald-400'
+   149→   149→        }`} />
+   150→   150→        <CardContent className="p-4 space-y-3">
+   151→   151→          <div className="flex items-start gap-3">
+   152→   152→            <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
+   153→   153→            <div className="min-w-0 flex-1">
+   154→   154→              <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+   155→   155→                {note.title}
+   156→   156→              </h3>
+   157→   157→              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+   158→   158→                {note.subject && (
+   159→   159→                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   160→   160→                    {note.subject.name}
+   161→   161→                  </Badge>
+   162→   162→                )}
+   163→   163→                {note.semester && (
+   164→   164→                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+   165→   165→                    Sem {note.semester}
+   166→   166→                  </Badge>
+   167→   167→                )}
+   168→   168→                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+   169→   169→                  {fileTypeLabel(note.fileType)}
+   170→   170→                </Badge>
+   171→   171→              </div>
+   172→   172→            </div>
+   173→   173→          </div>
+   174→   174→
+   175→   175→          {note.description && (
+   176→   176→            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{note.description}</p>
+   177→   177→          )}
+   178→   178→
+   179→   179→          {note.tags && note.tags.length > 0 && (
+   180→   180→            <div className="flex flex-wrap gap-1">
+   181→   181→              {note.tags.slice(0, 3).map((tag) => (
+   182→   182→                <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+   183→   183→                  #{tag}
+   184→   184→                </Badge>
+   185→   185→              ))}
+   186→   186→              {note.tags.length > 3 && (
+   187→   187→                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+   188→   188→                  +{note.tags.length - 3}
+   189→   189→                </Badge>
+   190→   190→              )}
+   191→   191→            </div>
+   192→   192→          )}
+   193→   193→
+   194→   194→          <div className="flex items-center gap-2 pt-0.5">
+   195→   195→            <Avatar className="size-5">
+   196→   196→              {note.uploader.avatarUrl && <AvatarImage src={note.uploader.avatarUrl} />}
+   197→   197→              <AvatarFallback className="text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   198→   198→                {note.uploader.name.charAt(0)}
+   199→   199→              </AvatarFallback>
+   200→   200→            </Avatar>
+   201→   201→            <span className="text-[11px] text-muted-foreground truncate">{note.uploader.name}</span>
+   202→   202→            <span className="ml-auto text-[10px] text-muted-foreground">{formatRelativeTime(note.createdAt)}</span>
+   203→   203→          </div>
+   204→   204→
+   205→   205→          <div className="flex items-center justify-between pt-0.5">
+   206→   206→            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+   207→   207→              <span className="flex items-center gap-0.5"><Download className="size-3" />{note.downloadCount}</span>
+   208→   208→              <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{note.avgRating > 0 ? note.avgRating.toFixed(1) : '—'}</span>
+   209→   209→              <span className="flex items-center gap-0.5"><Eye className="size-3" />{note.viewCount}</span>
+   210→   210→            </div>
+   211→   211→            <Button
+   212→   212→              variant="ghost"
+   213→   213→              size="icon"
+   214→   214→              className="size-7 rounded-full hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   215→   215→              onClick={onBookmark}
+   216→   216→            >
+   217→   217→              <Bookmark className={`size-3.5 ${note.isBookmarked ? 'fill-emerald-500 text-emerald-500' : 'text-muted-foreground'}`} />
+   218→   218→            </Button>
+   219→   219→          </div>
+   220→   220→        </CardContent>
+   221→   221→      </Card>
+   222→   222→    </motion.div>
+   223→   223→  );
+   224→   224→}
+   225→   225→
+   226→   226→// ── Note Grid Skeleton ──────────────────────────────────────────
+   227→   227→function NoteGridSkeleton() {
+   228→   228→  return (
+   229→   229→    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   230→   230→      {Array.from({ length: 9 }).map((_, i) => (
+   231→   231→        <Card key={i} className="border-0 shadow-sm">
+   232→   232→          <div className="h-1 w-full bg-muted" />
+   233→   233→          <CardContent className="p-4 space-y-3">
+   234→   234→            <div className="flex items-start gap-3">
+   235→   235→              <Skeleton className="size-8 rounded" />
+   236→   236→              <div className="flex-1 space-y-2">
+   237→   237→                <Skeleton className="h-4 w-3/4" />
+   238→   238→                <div className="flex gap-1.5">
+   239→   239→                  <Skeleton className="h-4 w-14 rounded-full" />
+   240→   240→                  <Skeleton className="h-4 w-10 rounded-full" />
+   241→   241→                </div>
+   242→   242→              </div>
+   243→   243→            </div>
+   244→   244→            <Skeleton className="h-3 w-full" />
+   245→   245→            <Skeleton className="h-3 w-2/3" />
+   246→   246→            <div className="flex items-center gap-2">
+   247→   247→              <Skeleton className="size-5 rounded-full" />
+   248→   248→              <Skeleton className="h-3 w-20" />
+   249→   249→            </div>
+   250→   250→          </CardContent>
+   251→   251→        </Card>
+   252→   252→      ))}
+   253→   253→    </div>
+   254→   254→  );
+   255→   255→}
+   256→   256→
+   257→   257→// ── Main Search Page ────────────────────────────────────────────
+   258→   258→export function SearchPage() {
+   259→   259→  const { navigate, searchQuery: storeQuery, setSearchQuery } = useAppStore();
+   260→   260→  const queryClient = useQueryClient();
+   261→   261→
+   262→   262→  // Search state — storeQuery is the source of truth, inputValue mirrors it
+   263→   263→  const [inputValue, setInputValue] = useState(storeQuery || '');
+   264→   264→  const [debouncedQuery, setDebouncedQuery] = useState(storeQuery || '');
+   265→   265→  const [filtersOpen, setFiltersOpen] = useState(false);
+   266→   266→  const [collegeId, setCollegeId] = useState<string>('_all');
+   267→   267→  const [departmentId, setDepartmentId] = useState<string>('_all');
+   268→   268→  const [subjectId, setSubjectId] = useState<string>('_all');
+   269→   269→  const [semester, setSemester] = useState<string>('_all');
+   270→   270→  const [fileType, setFileType] = useState<string>('_all');
+   271→   271→  const [sortBy, setSortBy] = useState<string>('relevance');
+   272→   272→  const [page, setPage] = useState(1);
+   273→   273→  const [recentSearches, setRecentSearches] = useState<string[]>(() => getRecentSearches());
+   274→   274→  const limit = 12;
+   275→   275→  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+   276→   276→
+   277→   277→  // Debounce input → trigger search
+   278→   278→  const handleInputChange = useCallback((value: string) => {
+   279→   279→    setInputValue(value);
+   280→   280→    setSearchQuery(value);
+   281→   281→    if (debounceRef.current) clearTimeout(debounceRef.current);
+   282→   282→    debounceRef.current = setTimeout(() => {
+   283→   283→      setDebouncedQuery(value);
+   284→   284→      setPage(1);
+   285→   285→    }, 300);
+   286→   286→  }, [setSearchQuery]);
+   287→   287→
+   288→   288→  // Clear search
+   289→   289→  const handleClear = useCallback(() => {
+   290→   290→    setInputValue('');
+   291→   291→    setDebouncedQuery('');
+   292→   292→    setSearchQuery('');
+   293→   293→    setPage(1);
+   294→   294→  }, [setSearchQuery]);
+   295→   295→
+   296→   296→  // Submit search (Enter key)
+   297→   297→  const handleSubmit = useCallback(() => {
+   298→   298→    if (debouncedQuery.trim()) {
+   299→   299→      addRecentSearch(debouncedQuery);
+   300→   300→      setRecentSearches(getRecentSearches());
+   301→   301→    }
+   302→   302→  }, [debouncedQuery]);
+   303→   303→
+   304→   304→  // Click recent search
+   305→   305→  const handleRecentClick = useCallback((query: string) => {
+   306→   306→    setInputValue(query);
+   307→   307→    setDebouncedQuery(query);
+   308→   308→    setSearchQuery(query);
+   309→   309→    setPage(1);
+   310→   310→  }, [setSearchQuery]);
+   311→   311→
+   312→   312→  // Trending tags
+   313→   313→  const trendingTags = ['Data Structures', 'Machine Learning', 'Calculus', 'Thermodynamics', 'Organic Chemistry', 'Microeconomics', 'Discrete Math', 'Operating Systems'];
+   314→   314→
+   315→   315→  // Fetch colleges & subjects for filters
+   316→   316→  const { data: collegesData } = useQuery({
+   317→   317→    queryKey: ['search-colleges'],
+   318→   318→    queryFn: fetchColleges,
+   319→   319→  });
+   320→   320→  const { data: subjectsData } = useQuery({
+   321→   321→    queryKey: ['search-subjects'],
+   322→   322→    queryFn: fetchSubjects,
+   323→   323→  });
+   324→   324→
+   325→   325→  // Build search query params
+   326→   326→  const hasActiveQuery = debouncedQuery.trim().length > 0;
+   327→   327→  const queryParams: Record<string, string> = {
+   328→   328→    q: debouncedQuery.trim(),
+   329→   329→    page: String(page),
+   330→   330→    limit: String(limit),
+   331→   331→    sortBy,
+   332→   332→  };
+   333→   333→  if (collegeId && collegeId !== '_all') queryParams.collegeId = collegeId;
+   334→   334→  if (departmentId && departmentId !== '_all') queryParams.departmentId = departmentId;
+   335→   335→  if (subjectId && subjectId !== '_all') queryParams.subjectId = subjectId;
+   336→   336→  if (semester && semester !== '_all') queryParams.semester = semester;
+   337→   337→  if (fileType && fileType !== '_all') queryParams.fileType = fileType;
+   338→   338→
+   339→   339→  // Fetch search results
+   340→   340→  const { data: searchData, isLoading, isError } = useQuery({
+   341→   341→    queryKey: ['search', queryParams],
+   342→   342→    queryFn: () => fetchSearch(queryParams),
+   343→   343→    enabled: hasActiveQuery,
+   344→   344→  });
+   345→   345→
+   346→   346→  const notes: NoteCard[] = searchData?.notes ?? [];
+   347→   347→  const totalPages: number = searchData?.totalPages ?? 1;
+   348→   348→  const total: number = searchData?.total ?? 0;
+   349→   349→  const hasFilters = collegeId !== '_all' || departmentId !== '_all' || subjectId !== '_all' || semester !== '_all' || fileType !== '_all';
+   350→   350→
+   351→   351→  // Bookmark handler
+   352→   352→  const handleBookmark = useCallback(async (e: React.MouseEvent, note: NoteCard) => {
+   353→   353→    e.stopPropagation();
+   354→   354→    try {
+   355→   355→      if (note.isBookmarked) {
+   356→   356→        await fetch(`/api/bookmarks?noteId=${note.id}`, { method: 'DELETE' });
+   357→   357→      } else {
+   358→   358→        await fetch('/api/bookmarks', {
+   359→   359→          method: 'POST',
+   360→   360→          headers: { 'Content-Type': 'application/json' },
+   361→   361→          body: JSON.stringify({ noteId: note.id }),
+   362→   362→        });
+   363→   363→      }
+   364→   364→      queryClient.invalidateQueries({ queryKey: ['search'] });
+   365→   365→    } catch {
+   366→   366→      // Silently fail
+   367→   367→    }
+   368→   368→  }, [queryClient]);
+   369→   369→
+   370→   370→  const clearFilters = () => {
+   371→   371→    setCollegeId('_all');
+   372→   372→    setDepartmentId('_all');
+   373→   373→    setSubjectId('_all');
+   374→   374→    setSemester('_all');
+   375→   375→    setFileType('_all');
+   376→   376→    setSortBy('relevance');
+   377→   377→    setPage(1);
+   378→   378→  };
+   379→   379→
+   380→   380→  const clearRecent = () => {
+   381→   381→    clearRecentSearches();
+   382→   382→    setRecentSearches([]);
+   383→   383→  };
+   384→   384→
+   385→   385→  // Departments for selected college
+   386→   386→  const departments = (collegesData?.colleges ?? []).find(
+   387→   387→    (c: { id: string }) => c.id === collegeId
+   388→   388→  )?.departments ?? [];
+   389→   389→
+   390→   390→  return (
+   391→   391→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+   392→   392→      {/* ── Header & Search Input ──────────────────── */}
+   393→   393→      <motion.div
+   394→   394→        initial={{ opacity: 0, y: -10 }}
+   395→   395→        animate={{ opacity: 1, y: 0 }}
+   396→   396→        className="space-y-4"
+   397→   397→      >
+   398→   398→        <div>
+   399→   399→          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Search Notes</h1>
+   400→   400→          <p className="text-sm text-muted-foreground mt-0.5">Find academic resources across all colleges and subjects</p>
+   401→   401→        </div>
+   402→   402→
+   403→   403→        {/* Large search input */}
+   404→   404→        <div className="relative">
+   405→   405→          <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+   406→   406→          <Input
+   407→   407→            type="text"
+   408→   408→            value={inputValue}
+   409→   409→            onChange={(e) => handleInputChange(e.target.value)}
+   410→   410→            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+   411→   411→            placeholder="Search notes by title, description, or content..."
+   412→   412→            className="h-12 pl-12 pr-12 text-base rounded-xl border-2 focus:border-emerald-500 dark:focus:border-emerald-400 transition-colors"
+   413→   413→          />
+   414→   414→          {inputValue && (
+   415→   415→            <Button
+   416→   416→              variant="ghost"
+   417→   417→              size="icon"
+   418→   418→              className="absolute right-2 top-1/2 -translate-y-1/2 size-8 rounded-full hover:bg-muted"
+   419→   419→              onClick={handleClear}
+   420→   420→            >
+   421→   421→              <X className="size-4" />
+   422→   422→            </Button>
+   423→   423→          )}
+   424→   424→        </div>
+   425→   425→      </motion.div>
+   426→   426→
+   427→   427→      {/* ── Collapsible Filter Panel ───────────────── */}
+   428→   428→      <motion.div
+   429→   429→        initial={{ opacity: 0, y: 5 }}
+   430→   430→        animate={{ opacity: 1, y: 0 }}
+   431→   431→        transition={{ delay: 0.1 }}
+   432→   432→      >
+   433→   433→        <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+   434→   434→          <div className="flex items-center justify-between">
+   435→   435→            <CollapsibleTrigger asChild>
+   436→   436→              <Button variant="outline" size="sm" className="gap-2">
+   437→   437→                <SlidersHorizontal className="size-4" />
+   438→   438→                Filters
+   439→   439→                {hasFilters && (
+   440→   440→                  <Badge className="ml-1 size-5 p-0 text-[10px] flex items-center justify-center bg-emerald-600 text-white">
+   441→   441→                    {[collegeId !== '_all', departmentId !== '_all', subjectId !== '_all', semester !== '_all', fileType !== '_all'].filter(Boolean).length}
+   442→   442→                  </Badge>
+   443→   443→                )}
+   444→   444→              </Button>
+   445→   445→            </CollapsibleTrigger>
+   446→   446→            {hasFilters && (
+   447→   447→              <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={clearFilters}>
+   448→   448→                <X className="size-3" /> Clear filters
+   449→   449→              </Button>
+   450→   450→            )}
+   451→   451→          </div>
+   452→   452→          <CollapsibleContent>
+   453→   453→            <Card className="mt-3 border-0 shadow-sm">
+   454→   454→              <CardContent className="p-4">
+   455→   455→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+   456→   456→                  {/* College */}
+   457→   457→                  <Select value={collegeId} onValueChange={(v) => { setCollegeId(v); setDepartmentId('_all'); setPage(1); }}>
+   458→   458→                    <SelectTrigger className="h-9 text-xs">
+   459→   459→                      <SelectValue placeholder="College" />
+   460→   460→                    </SelectTrigger>
+   461→   461→                    <SelectContent>
+   462→   462→                      <SelectItem value="_all">All Colleges</SelectItem>
+   463→   463→                      {(collegesData?.colleges ?? []).map((c: { id: string; name: string }) => (
+   464→   464→                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+   465→   465→                      ))}
+   466→   466→                    </SelectContent>
+   467→   467→                  </Select>
+   468→   468→
+   469→   469→                  {/* Department */}
+   470→   470→                  <Select value={departmentId} onValueChange={(v) => { setDepartmentId(v); setPage(1); }}>
+   471→   471→                    <SelectTrigger className="h-9 text-xs">
+   472→   472→                      <SelectValue placeholder="Department" />
+   473→   473→                    </SelectTrigger>
+   474→   474→                    <SelectContent>
+   475→   475→                      <SelectItem value="_all">All Departments</SelectItem>
+   476→   476→                      {departments.map((d: { id: string; name: string }) => (
+   477→   477→                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+   478→   478→                      ))}
+   479→   479→                    </SelectContent>
+   480→   480→                  </Select>
+   481→   481→
+   482→   482→                  {/* Subject */}
+   483→   483→                  <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setPage(1); }}>
+   484→   484→                    <SelectTrigger className="h-9 text-xs">
+   485→   485→                      <SelectValue placeholder="Subject" />
+   486→   486→                    </SelectTrigger>
+   487→   487→                    <SelectContent>
+   488→   488→                      <SelectItem value="_all">All Subjects</SelectItem>
+   489→   489→                      {(subjectsData?.subjects ?? []).map((s: { id: string; name: string }) => (
+   490→   490→                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+   491→   491→                      ))}
+   492→   492→                    </SelectContent>
+   493→   493→                  </Select>
+   494→   494→
+   495→   495→                  {/* Semester */}
+   496→   496→                  <Select value={semester} onValueChange={(v) => { setSemester(v); setPage(1); }}>
+   497→   497→                    <SelectTrigger className="h-9 text-xs">
+   498→   498→                      <SelectValue placeholder="Semester" />
+   499→   499→                    </SelectTrigger>
+   500→   500→                    <SelectContent>
+   501→   501→                      <SelectItem value="_all">All Semesters</SelectItem>
+   502→   502→                      {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+   503→   503→                        <SelectItem key={s} value={String(s)}>Sem {s}</SelectItem>
+   504→   504→                      ))}
+   505→   505→                    </SelectContent>
+   506→   506→                  </Select>
+   507→   507→
+   508→   508→                  {/* File Type */}
+   509→   509→                  <Select value={fileType} onValueChange={(v) => { setFileType(v); setPage(1); }}>
+   510→   510→                    <SelectTrigger className="h-9 text-xs">
+   511→   511→                      <SelectValue placeholder="File type" />
+   512→   512→                    </SelectTrigger>
+   513→   513→                    <SelectContent>
+   514→   514→                      <SelectItem value="_all">All Types</SelectItem>
+   515→   515→                      <SelectItem value="pdf">PDF</SelectItem>
+   516→   516→                      <SelectItem value="docx">DOCX</SelectItem>
+   517→   517→                      <SelectItem value="pptx">PPTX</SelectItem>
+   518→   518→                      <SelectItem value="txt">TXT</SelectItem>
+   519→   519→                      <SelectItem value="md">Markdown</SelectItem>
+   520→   520→                      <SelectItem value="image">Image</SelectItem>
+   521→   521→                    </SelectContent>
+   522→   522→                  </Select>
+   523→   523→
+   524→   524→                  {/* Sort By */}
+   525→   525→                  <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
+   526→   526→                    <SelectTrigger className="h-9 text-xs">
+   527→   527→                      <SelectValue placeholder="Sort by" />
+   528→   528→                    </SelectTrigger>
+   529→   529→                    <SelectContent>
+   530→   530→                      <SelectItem value="relevance">Relevance</SelectItem>
+   531→   531→                      <SelectItem value="newest">Newest</SelectItem>
+   532→   532→                      <SelectItem value="downloads">Downloads</SelectItem>
+   533→   533→                      <SelectItem value="rating">Rating</SelectItem>
+   534→   534→                      <SelectItem value="views">Views</SelectItem>
+   535→   535→                    </SelectContent>
+   536→   536→                  </Select>
+   537→   537→                </div>
+   538→   538→              </CardContent>
+   539→   539→            </Card>
+   540→   540→          </CollapsibleContent>
+   541→   541→        </Collapsible>
+   542→   542→      </motion.div>
+   543→   543→
+   544→   544→      {/* ── No Active Query State ──────────────────── */}
+   545→   545→      {!hasActiveQuery && (
+   546→   546→        <motion.div
+   547→   547→          initial={{ opacity: 0, y: 10 }}
+   548→   548→          animate={{ opacity: 1, y: 0 }}
+   549→   549→          transition={{ delay: 0.2 }}
+   550→   550→          className="space-y-8"
+   551→   551→        >
+   552→   552→          {/* Recent Searches */}
+   553→   553→          {recentSearches.length > 0 && (
+   554→   554→            <section>
+   555→   555→              <div className="flex items-center justify-between mb-3">
+   556→   556→                <div className="flex items-center gap-2">
+   557→   557→                  <Clock className="size-4 text-muted-foreground" />
+   558→   558→                  <h2 className="text-sm font-semibold">Recent Searches</h2>
+   559→   559→                </div>
+   560→   560→                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={clearRecent}>
+   561→   561→                  Clear all
+   562→   562→                </Button>
+   563→   563→              </div>
+   564→   564→              <div className="flex flex-wrap gap-2">
+   565→   565→                {recentSearches.map((query) => (
+   566→   566→                  <motion.button
+   567→   567→                    key={query}
+   568→   568→                    whileHover={{ scale: 1.05 }}
+   569→   569→                    whileTap={{ scale: 0.95 }}
+   570→   570→                    onClick={() => handleRecentClick(query)}
+   571→   571→                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 hover:bg-muted text-xs font-medium transition-colors"
+   572→   572→                  >
+   573→   573→                    <Clock className="size-3 text-muted-foreground" />
+   574→   574→                    {query}
+   575→   575→                  </motion.button>
+   576→   576→                ))}
+   577→   577→              </div>
+   578→   578→            </section>
+   579→   579→          )}
+   580→   580→
+   581→   581→          {/* Trending Tags */}
+   582→   582→          <section>
+   583→   583→            <div className="flex items-center gap-2 mb-3">
+   584→   584→              <TrendingUp className="size-4 text-emerald-600" />
+   585→   585→              <h2 className="text-sm font-semibold">Trending Topics</h2>
+   586→   586→              <Sparkles className="size-3.5 text-amber-500" />
+   587→   587→            </div>
+   588→   588→            <div className="flex flex-wrap gap-2">
+   589→   589→              {trendingTags.map((tag) => (
+   590→   590→                <motion.button
+   591→   591→                  key={tag}
+   592→   592→                  whileHover={{ scale: 1.05 }}
+   593→   593→                  whileTap={{ scale: 0.95 }}
+   594→   594→                  onClick={() => handleRecentClick(tag)}
+   595→   595→                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium transition-colors border border-emerald-200 dark:border-emerald-800"
+   596→   596→                >
+   597→   597→                  <TrendingUp className="size-3" />
+   598→   598→                  {tag}
+   599→   599→                </motion.button>
+   600→   600→              ))}
+   601→   601→            </div>
+   602→   602→          </section>
+   603→   603→
+   604→   604→          {/* Search prompt */}
+   605→   605→          <div className="flex flex-col items-center justify-center py-12 text-center">
+   606→   606→            <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 p-6 mb-4">
+   607→   607→              <Search className="size-10 text-emerald-600" />
+   608→   608→            </div>
+   609→   609→            <h3 className="font-semibold text-lg">Search for Notes</h3>
+   610→   610→            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   611→   611→              Type a keyword above to search across thousands of academic notes, summaries, and study materials.
+   612→   612→            </p>
+   613→   613→          </div>
+   614→   614→        </motion.div>
+   615→   615→      )}
+   616→   616→
+   617→   617→      {/* ── Search Results ─────────────────────────── */}
+   618→   618→      {hasActiveQuery && (
+   619→   619→        <>
+   620→   620→          {/* Result count */}
+   621→   621→          <motion.div
+   622→   622→            initial={{ opacity: 0 }}
+   623→   623→            animate={{ opacity: 1 }}
+   624→   624→            className="flex items-center justify-between"
+   625→   625→          >
+   626→   626→            <div className="text-sm text-muted-foreground">
+   627→   627→              {isLoading ? (
+   628→   628→                <Skeleton className="h-4 w-32 inline-block" />
+   629→   629→              ) : (
+   630→   630→                <>
+   631→   631→                  <span className="font-semibold text-foreground">{total}</span>
+   632→   632→                  {' '}result{total !== 1 ? 's' : ''} for &quot;{debouncedQuery}&quot;
+   633→   633→                </>
+   634→   634→              )}
+   635→   635→            </div>
+   636→   636→          </motion.div>
+   637→   637→
+   638→   638→          {/* Results grid */}
+   639→   639→          {isLoading ? (
+   640→   640→            <NoteGridSkeleton />
+   641→   641→          ) : isError ? (
+   642→   642→            <motion.div
+   643→   643→              initial={{ opacity: 0, y: 10 }}
+   644→   644→              animate={{ opacity: 1, y: 0 }}
+   645→   645→              className="flex flex-col items-center justify-center py-16 text-center"
+   646→   646→            >
+   647→   647→              <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+   648→   648→                <FileText className="size-8 text-destructive" />
+   649→   649→              </div>
+   650→   650→              <h3 className="font-semibold">Search failed</h3>
+   651→   651→              <p className="text-sm text-muted-foreground mt-1">Something went wrong. Please try again.</p>
+   652→   652→              <Button variant="outline" size="sm" className="mt-4" onClick={() => queryClient.invalidateQueries({ queryKey: ['search'] })}>
+   653→   653→                Retry
+   654→   654→              </Button>
+   655→   655→            </motion.div>
+   656→   656→          ) : notes.length === 0 ? (
+   657→   657→            <motion.div
+   658→   658→              initial={{ opacity: 0, y: 10 }}
+   659→   659→              animate={{ opacity: 1, y: 0 }}
+   660→   660→              className="flex flex-col items-center justify-center py-16 text-center"
+   661→   661→            >
+   662→   662→              <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   663→   663→                <Search className="size-8 text-muted-foreground" />
+   664→   664→              </div>
+   665→   665→              <h3 className="font-semibold">No results found</h3>
+   666→   666→              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   667→   667→                Try different keywords, remove some filters, or check your spelling.
+   668→   668→              </p>
+   669→   669→              {hasFilters && (
+   670→   670→                <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={clearFilters}>
+   671→   671→                  <X className="size-3.5" /> Clear Filters
+   672→   672→                </Button>
+   673→   673→              )}
+   674→   674→            </motion.div>
+   675→   675→          ) : (
+   676→   676→            <motion.div
+   677→   677→              variants={gridContainer}
+   678→   678→              initial="hidden"
+   679→   679→              animate="show"
+   680→   680→              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+   681→   681→            >
+   682→   682→              <AnimatePresence mode="popLayout">
+   683→   683→                {notes.map((note) => (
+   684→   684→                  <motion.div key={note.id} variants={gridItem} layout>
+   685→   685→                    <NoteCardItem
+   686→   686→                      note={note}
+   687→   687→                      onClick={() => navigate('note-detail', { id: note.id })}
+   688→   688→                      onBookmark={(e) => handleBookmark(e, note)}
+   689→   689→                    />
+   690→   690→                  </motion.div>
+   691→   691→                ))}
+   692→   692→              </AnimatePresence>
+   693→   693→            </motion.div>
+   694→   694→          )}
+   695→   695→
+   696→   696→          {/* Pagination */}
+   697→   697→          {totalPages > 1 && (
+   698→   698→            <motion.div
+   699→   699→              initial={{ opacity: 0 }}
+   700→   700→              animate={{ opacity: 1 }}
+   701→   701→              className="flex items-center justify-center gap-2 pt-2"
+   702→   702→            >
+   703→   703→              <Button
+   704→   704→                variant="outline"
+   705→   705→                size="sm"
+   706→   706→                disabled={page <= 1}
+   707→   707→                onClick={() => setPage((p) => Math.max(1, p - 1))}
+   708→   708→                className="gap-1"
+   709→   709→              >
+   710→   710→                <ChevronLeft className="size-4" /> Previous
+   711→   711→              </Button>
+   712→   712→              <div className="flex items-center gap-1 px-2">
+   713→   713→                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+   714→   714→                  let pageNum: number;
+   715→   715→                  if (totalPages <= 5) {
+   716→   716→                    pageNum = i + 1;
+   717→   717→                  } else if (page <= 3) {
+   718→   718→                    pageNum = i + 1;
+   719→   719→                  } else if (page >= totalPages - 2) {
+   720→   720→                    pageNum = totalPages - 4 + i;
+   721→   721→                  } else {
+   722→   722→                    pageNum = page - 2 + i;
+   723→   723→                  }
+   724→   724→                  return (
+   725→   725→                    <Button
+   726→   726→                      key={pageNum}
+   727→   727→                      variant={page === pageNum ? 'default' : 'ghost'}
+   728→   728→                      size="sm"
+   729→   729→                      className={`size-8 p-0 text-xs ${page === pageNum ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
+   730→   730→                      onClick={() => setPage(pageNum)}
+   731→   731→                    >
+   732→   732→                      {pageNum}
+   733→   733→                    </Button>
+   734→   734→                  );
+   735→   735→                })}
+   736→   736→              </div>
+   737→   737→              <Button
+   738→   738→                variant="outline"
+   739→   739→                size="sm"
+   740→   740→                disabled={page >= totalPages}
+   741→   741→                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+   742→   742→                className="gap-1"
+   743→   743→              >
+   744→   744→                Next <ChevronRight className="size-4" />
+   745→   745→              </Button>
+   746→   746→            </motion.div>
+   747→   747→          )}
+   748→   748→        </>
+   749→   749→      )}
+   750→   750→    </div>
+   751→   751→  );
+   752→   752→}
+   753→   753→

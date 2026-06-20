@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { hashPassword } from '@/lib/auth';
+import { hashPassword, getAuthUser, hasRole } from '@/lib/auth';
 
 // POST - Seed database with sample data
 export async function POST(request: NextRequest) {
   try {
+    // Authentication and admin role check
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized. Authentication required.' }, { status: 401 });
+    }
+    if (!hasRole(user.role, ['admin'])) {
+      return NextResponse.json({ success: false, error: 'Forbidden. Admin access required.' }, { status: 403 });
+    }
+
     // Check if already seeded
     const existingColleges = await db.college.count();
     if (existingColleges > 0) {

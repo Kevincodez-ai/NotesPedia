@@ -1,0 +1,1109 @@
+     1→'use client';
+     2→
+     3→import React, { useState } from 'react';
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/store/app-store';
+     6→import { motion } from 'framer-motion';
+     7→import {
+     8→  Shield,
+     9→  Users,
+    10→  FileText,
+    11→  Download,
+    12→  GraduationCap,
+    13→  AlertTriangle,
+    14→  Activity,
+    15→  Search,
+    16→  Ban,
+    17→  CheckCircle2,
+    18→  ArrowUpRight,
+    19→  Flag,
+    20→  Trash2,
+    21→  Star,
+    22→  Eye,
+    23→  Plus,
+    24→  MoreHorizontal,
+    25→  RefreshCw,
+    26→  X,
+    27→  ChevronLeft,
+    28→  ChevronRight,
+    29→} from 'lucide-react';
+    30→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    31→import { Button } from '@/components/ui/button';
+    32→import { Badge } from '@/components/ui/badge';
+    33→import { Skeleton } from '@/components/ui/skeleton';
+    34→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    35→import { Input } from '@/components/ui/input';
+    36→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    37→import {
+    38→  Table,
+    39→  TableBody,
+    40→  TableCell,
+    41→  TableHead,
+    42→  TableHeader,
+    43→  TableRow,
+    44→} from '@/components/ui/table';
+    45→import {
+    46→  Select,
+    47→  SelectContent,
+    48→  SelectItem,
+    49→  SelectTrigger,
+    50→  SelectValue,
+    51→} from '@/components/ui/select';
+    52→import {
+    53→  Dialog,
+    54→  DialogContent,
+    55→  DialogDescription,
+    56→  DialogFooter,
+    57→  DialogHeader,
+    58→  DialogTitle,
+    59→} from '@/components/ui/dialog';
+    60→import { Label } from '@/components/ui/label';
+    61→import { toast } from 'sonner';
+    62→import type { AdminStats, CollegeData } from '@/types';
+    63→
+    64→// ── Animation variants ──────────────────────────────────────────
+    65→const container = {
+    66→  hidden: { opacity: 0 },
+    67→  show: { opacity: 1, transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
+    68→};
+    69→const item = {
+    70→  hidden: { opacity: 0, y: 16 },
+    71→  show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
+    72→};
+    73→
+    74→// ── Fetchers ────────────────────────────────────────────────────
+    75→async function fetchAdminStats() {
+    76→  const res = await fetch('/api/admin');
+    77→  if (!res.ok) throw new Error('Failed to fetch admin stats');
+    78→  return res.json();
+    79→}
+    80→
+    81→async function fetchAdminUsers(params: string) {
+    82→  const res = await fetch(`/api/admin/users?${params}`);
+    83→  if (!res.ok) throw new Error('Failed to fetch users');
+    84→  return res.json();
+    85→}
+    86→
+    87→async function fetchAdminNotes(params: string) {
+    88→  const res = await fetch(`/api/admin/notes?${params}`);
+    89→  if (!res.ok) throw new Error('Failed to fetch notes');
+    90→  return res.json();
+    91→}
+    92→
+    93→async function fetchAdminReports(params: string) {
+    94→  const res = await fetch(`/api/admin/reports?${params}`);
+    95→  if (!res.ok) throw new Error('Failed to fetch reports');
+    96→  return res.json();
+    97→}
+    98→
+    99→async function fetchAdminColleges(params: string) {
+   100→  const res = await fetch(`/api/admin/colleges?${params}`);
+   101→  if (!res.ok) throw new Error('Failed to fetch colleges');
+   102→  return res.json();
+   103→}
+   104→
+   105→async function adminAction(endpoint: string, method: string, body?: unknown) {
+   106→  const res = await fetch(endpoint, {
+   107→    method,
+   108→    headers: { 'Content-Type': 'application/json' },
+   109→    body: body ? JSON.stringify(body) : undefined,
+   110→  });
+   111→  if (!res.ok) {
+   112→    const data = await res.json().catch(() => ({}));
+   113→    throw new Error(data.error || 'Action failed');
+   114→  }
+   115→  return res.json();
+   116→}
+   117→
+   118→// ── Stat Card ───────────────────────────────────────────────────
+   119→function StatCard({
+   120→  title,
+   121→  value,
+   122→  icon: Icon,
+   123→  subtitle,
+   124→  color,
+   125→}: {
+   126→  title: string;
+   127→  value: number | string;
+   128→  icon: React.ElementType;
+   129→  subtitle?: string;
+   130→  color: string;
+   131→}) {
+   132→  return (
+   133→    <motion.div variants={item}>
+   134→      <Card className="relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
+   135→        <CardContent className="p-5">
+   136→          <div className="flex items-start justify-between">
+   137→            <div className="space-y-1">
+   138→              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
+   139→              <p className="text-2xl font-bold tracking-tight">{value}</p>
+   140→              {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+   141→            </div>
+   142→            <div className={`rounded-xl p-2.5 ${color}`}>
+   143→              <Icon className="size-5 text-white" />
+   144→            </div>
+   145→          </div>
+   146→        </CardContent>
+   147→      </Card>
+   148→    </motion.div>
+   149→  );
+   150→}
+   151→
+   152→// ── Access Denied ───────────────────────────────────────────────
+   153→function AccessDenied() {
+   154→  return (
+   155→    <motion.div
+   156→      initial={{ opacity: 0, y: 20 }}
+   157→      animate={{ opacity: 1, y: 0 }}
+   158→      className="flex flex-col items-center justify-center min-h-[60vh] text-center"
+   159→    >
+   160→      <div className="rounded-2xl bg-destructive/10 p-6 mb-6">
+   161→        <Shield className="size-12 text-destructive" />
+   162→      </div>
+   163→      <h1 className="text-2xl font-bold">Access Denied</h1>
+   164→      <p className="text-muted-foreground mt-2 max-w-md">
+   165→        You don&apos;t have permission to access the admin panel. This area is restricted to administrators only.
+   166→      </p>
+   167→      <Button
+   168→        variant="outline"
+   169→        className="mt-6 gap-2"
+   170→        onClick={() => useAppStore.getState().navigate('dashboard')}
+   171→      >
+   172→        Back to Dashboard
+   173→      </Button>
+   174→    </motion.div>
+   175→  );
+   176→}
+   177→
+   178→// ── Loading Skeleton ────────────────────────────────────────────
+   179→function StatsSkeleton() {
+   180→  return (
+   181→    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+   182→      {Array.from({ length: 6 }).map((_, i) => (
+   183→        <Card key={i} className="border-0 shadow-sm">
+   184→          <CardContent className="p-5">
+   185→            <div className="flex items-start justify-between">
+   186→              <div className="space-y-2 flex-1">
+   187→                <Skeleton className="h-3 w-20" />
+   188→                <Skeleton className="h-7 w-12" />
+   189→              </div>
+   190→              <Skeleton className="size-10 rounded-xl" />
+   191→            </div>
+   192→          </CardContent>
+   193→        </Card>
+   194→      ))}
+   195→    </div>
+   196→  );
+   197→}
+   198→
+   199→function TableSkeleton({ cols = 5 }: { cols?: number }) {
+   200→  return (
+   201→    <div className="space-y-2">
+   202→      {Array.from({ length: 5 }).map((_, i) => (
+   203→        <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-muted/30">
+   204→          {Array.from({ length: cols }).map((_, j) => (
+   205→            <Skeleton key={j} className="h-4 flex-1" />
+   206→          ))}
+   207→        </div>
+   208→      ))}
+   209→    </div>
+   210→  );
+   211→}
+   212→
+   213→// ── Main Admin Page ─────────────────────────────────────────────
+   214→export function AdminPage() {
+   215→  const { user } = useAppStore();
+   216→  const queryClient = useQueryClient();
+   217→  const [activeTab, setActiveTab] = useState('overview');
+   218→
+   219→  // Gate access
+   220→  if (!user || !['admin', 'super_admin'].includes(user.role)) {
+   221→    return <AccessDenied />;
+   222→  }
+   223→
+   224→  return (
+   225→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+   226→      {/* ── Header ─────────────────────────────────── */}
+   227→      <motion.div
+   228→        initial={{ opacity: 0, y: -10 }}
+   229→        animate={{ opacity: 1, y: 0 }}
+   230→        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+   231→      >
+   232→        <div>
+   233→          <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+   234→            <Shield className="size-7 text-emerald-600" />
+   235→            Admin Dashboard
+   236→          </h1>
+   237→          <p className="text-sm text-muted-foreground mt-0.5">
+   238→            Manage users, notes, reports, and platform settings
+   239→          </p>
+   240→        </div>
+   241→      </motion.div>
+   242→
+   243→      {/* ── Tabs ───────────────────────────────────── */}
+   244→      <Tabs value={activeTab} onValueChange={setActiveTab}>
+   245→        <TabsList className="bg-muted/50">
+   246→          <TabsTrigger value="overview" className="text-xs gap-1.5">
+   247→            <Activity className="size-3.5" /> Overview
+   248→          </TabsTrigger>
+   249→          <TabsTrigger value="users" className="text-xs gap-1.5">
+   250→            <Users className="size-3.5" /> Users
+   251→          </TabsTrigger>
+   252→          <TabsTrigger value="notes" className="text-xs gap-1.5">
+   253→            <FileText className="size-3.5" /> Notes
+   254→          </TabsTrigger>
+   255→          <TabsTrigger value="reports" className="text-xs gap-1.5">
+   256→            <AlertTriangle className="size-3.5" /> Reports
+   257→          </TabsTrigger>
+   258→          <TabsTrigger value="colleges" className="text-xs gap-1.5">
+   259→            <GraduationCap className="size-3.5" /> Colleges
+   260→          </TabsTrigger>
+   261→        </TabsList>
+   262→
+   263→        <TabsContent value="overview" className="mt-6 space-y-6">
+   264→          <OverviewTab />
+   265→        </TabsContent>
+   266→        <TabsContent value="users" className="mt-6">
+   267→          <UsersTab />
+   268→        </TabsContent>
+   269→        <TabsContent value="notes" className="mt-6">
+   270→          <NotesTab />
+   271→        </TabsContent>
+   272→        <TabsContent value="reports" className="mt-6">
+   273→          <ReportsTab />
+   274→        </TabsContent>
+   275→        <TabsContent value="colleges" className="mt-6">
+   276→          <CollegesTab />
+   277→        </TabsContent>
+   278→      </Tabs>
+   279→    </div>
+   280→  );
+   281→}
+   282→
+   283→// ── Overview Tab ────────────────────────────────────────────────
+   284→function OverviewTab() {
+   285→  const { data, isLoading, isError } = useQuery({
+   286→    queryKey: ['admin-stats'],
+   287→    queryFn: fetchAdminStats,
+   288→  });
+   289→
+   290→  const stats: AdminStats | null = data?.stats ?? null;
+   291→
+   292→  if (isLoading) return <StatsSkeleton />;
+   293→  if (isError) {
+   294→    return (
+   295→      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   296→        <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+   297→          <AlertTriangle className="size-8 text-destructive" />
+   298→        </div>
+   299→        <h3 className="font-semibold">Failed to load stats</h3>
+   300→        <p className="text-sm text-muted-foreground mt-1">Something went wrong. Please try again.</p>
+   301→      </motion.div>
+   302→    );
+   303→  }
+   304→
+   305→  if (!stats) return null;
+   306→
+   307→  return (
+   308→    <div className="space-y-8">
+   309→      {/* Stats Cards */}
+   310→      <motion.div
+   311→        variants={container}
+   312→        initial="hidden"
+   313→        animate="show"
+   314→        className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4"
+   315→      >
+   316→        <StatCard title="Total Users" value={stats.totalUsers} icon={Users} subtitle="Registered" color="bg-emerald-500" />
+   317→        <StatCard title="Total Notes" value={stats.totalNotes} icon={FileText} subtitle="Uploaded" color="bg-teal-500" />
+   318→        <StatCard title="Downloads" value={stats.totalDownloads} icon={Download} subtitle="All time" color="bg-amber-500" />
+   319→        <StatCard title="Colleges" value={stats.totalColleges} icon={GraduationCap} subtitle="Registered" color="bg-rose-500" />
+   320→        <StatCard title="Pending Reports" value={stats.pendingReports} icon={AlertTriangle} subtitle="Need review" color="bg-orange-500" />
+   321→        <StatCard title="Active Today" value={stats.activeUsersToday} icon={Activity} subtitle="Users" color="bg-cyan-500" />
+   322→      </motion.div>
+   323→
+   324→      {/* Quick Actions */}
+   325→      <motion.div
+   326→        initial={{ opacity: 0, y: 20 }}
+   327→        animate={{ opacity: 1, y: 0 }}
+   328→        transition={{ delay: 0.3 }}
+   329→      >
+   330→        <Card className="border-0 shadow-sm">
+   331→          <CardHeader className="pb-3">
+   332→            <CardTitle className="text-base flex items-center gap-2">
+   333→              <ArrowUpRight className="size-4 text-emerald-600" /> Quick Actions
+   334→            </CardTitle>
+   335→          </CardHeader>
+   336→          <CardContent>
+   337→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+   338→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+   339→                <Users className="size-5 text-emerald-600" />
+   340→                <span className="text-xs">View Users</span>
+   341→              </Button>
+   342→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+   343→                <AlertTriangle className="size-5 text-orange-500" />
+   344→                <span className="text-xs">Review Reports</span>
+   345→              </Button>
+   346→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+   347→                <GraduationCap className="size-5 text-teal-600" />
+   348→                <span className="text-xs">Add College</span>
+   349→              </Button>
+   350→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+   351→                <FileText className="size-5 text-amber-500" />
+   352→                <span className="text-xs">Flagged Notes</span>
+   353→              </Button>
+   354→            </div>
+   355→          </CardContent>
+   356→        </Card>
+   357→      </motion.div>
+   358→
+   359→      {/* Recent Reports */}
+   360→      {data?.stats?.recentReports && data.stats.recentReports.length > 0 && (
+   361→        <motion.div
+   362→          initial={{ opacity: 0, y: 20 }}
+   363→          animate={{ opacity: 1, y: 0 }}
+   364→          transition={{ delay: 0.5 }}
+   365→        >
+   366→          <Card className="border-0 shadow-sm">
+   367→            <CardHeader className="pb-3">
+   368→              <CardTitle className="text-base flex items-center gap-2">
+   369→                <AlertTriangle className="size-4 text-orange-500" /> Recent Reports
+   370→              </CardTitle>
+   371→            </CardHeader>
+   372→            <CardContent>
+   373→              <div className="space-y-3 max-h-64 overflow-y-auto">
+   374→                {data.stats.recentReports.map((report: { id: string; targetType: string; reason: string; status: string; createdAt: string; reporter: { name: string; avatarUrl?: string } }) => (
+   375→                  <div key={report.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+   376→                    <Avatar className="size-7">
+   377→                      {report.reporter.avatarUrl && <AvatarImage src={report.reporter.avatarUrl} />}
+   378→                      <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   379→                        {report.reporter.name.charAt(0)}
+   380→                      </AvatarFallback>
+   381→                    </Avatar>
+   382→                    <div className="flex-1 min-w-0">
+   383→                      <p className="text-xs font-medium truncate">{report.reason}</p>
+   384→                      <p className="text-[10px] text-muted-foreground">
+   385→                        Reported by {report.reporter.name} · {report.targetType}
+   386→                      </p>
+   387→                    </div>
+   388→                    <Badge className="text-[9px] bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 shrink-0">
+   389→                      {report.status}
+   390→                    </Badge>
+   391→                  </div>
+   392→                ))}
+   393→              </div>
+   394→            </CardContent>
+   395→          </Card>
+   396→        </motion.div>
+   397→      )}
+   398→    </div>
+   399→  );
+   400→}
+   401→
+   402→// ── Users Tab ───────────────────────────────────────────────────
+   403→function UsersTab() {
+   404→  const queryClient = useQueryClient();
+   405→  const [search, setSearch] = useState('');
+   406→  const [roleFilter, setRoleFilter] = useState('all');
+   407→  const [page, setPage] = useState(1);
+   408→  const limit = 10;
+   409→
+   410→  const params = new URLSearchParams({
+   411→    page: String(page),
+   412→    limit: String(limit),
+   413→    ...(search && { q: search }),
+   414→    ...(roleFilter !== 'all' && { role: roleFilter }),
+   415→  }).toString();
+   416→
+   417→  const { data, isLoading } = useQuery({
+   418→    queryKey: ['admin-users', search, roleFilter, page],
+   419→    queryFn: () => fetchAdminUsers(params),
+   420→  });
+   421→
+   422→  const users: {
+   423→    id: string; name: string; email: string; role: string; avatarUrl?: string;
+   424→    isActive: boolean; emailVerified: boolean; createdAt: string;
+   425→    _count?: { notes: number };
+   426→  }[] = data?.users ?? [];
+   427→  const total = data?.total ?? 0;
+   428→  const totalPages = Math.ceil(total / limit);
+   429→
+   430→  const actionMutation = useMutation({
+   431→    mutationFn: ({ userId, action }: { userId: string; action: string }) =>
+   432→      adminAction('/api/admin/users', 'PUT', { userId, action }),
+   433→    onSuccess: (_, variables) => {
+   434→      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+   435→      toast.success(`User ${variables.action} successful`);
+   436→    },
+   437→    onError: (error) => toast.error(error.message),
+   438→  });
+   439→
+   440→  const roleBadgeColor = (role: string) => {
+   441→    switch (role) {
+   442→      case 'super_admin': return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300';
+   443→      case 'admin': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300';
+   444→      case 'moderator': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+   445→      case 'contributor': return 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300';
+   446→      case 'verified_student': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+   447→      default: return 'bg-muted text-muted-foreground';
+   448→    }
+   449→  };
+   450→
+   451→  return (
+   452→    <div className="space-y-4">
+   453→      {/* Filters */}
+   454→      <div className="flex flex-col sm:flex-row gap-3">
+   455→        <div className="relative flex-1">
+   456→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   457→          <Input
+   458→            className="pl-9 h-9"
+   459→            placeholder="Search users by name or email..."
+   460→            value={search}
+   461→            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+   462→          />
+   463→        </div>
+   464→        <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); setPage(1); }}>
+   465→          <SelectTrigger className="h-9 w-[160px]">
+   466→            <SelectValue placeholder="Filter by role" />
+   467→          </SelectTrigger>
+   468→          <SelectContent>
+   469→            <SelectItem value="all">All Roles</SelectItem>
+   470→            <SelectItem value="student">Student</SelectItem>
+   471→            <SelectItem value="verified_student">Verified</SelectItem>
+   472→            <SelectItem value="contributor">Contributor</SelectItem>
+   473→            <SelectItem value="moderator">Moderator</SelectItem>
+   474→            <SelectItem value="admin">Admin</SelectItem>
+   475→            <SelectItem value="super_admin">Super Admin</SelectItem>
+   476→          </SelectContent>
+   477→        </Select>
+   478→      </div>
+   479→
+   480→      {/* Table */}
+   481→      {isLoading ? (
+   482→        <TableSkeleton cols={5} />
+   483→      ) : users.length === 0 ? (
+   484→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   485→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   486→            <Users className="size-8 text-muted-foreground" />
+   487→          </div>
+   488→          <h3 className="font-semibold">No users found</h3>
+   489→          <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or filter.</p>
+   490→        </motion.div>
+   491→      ) : (
+   492→        <Card className="border-0 shadow-sm">
+   493→          <Table>
+   494→            <TableHeader>
+   495→              <TableRow>
+   496→                <TableHead>User</TableHead>
+   497→                <TableHead>Role</TableHead>
+   498→                <TableHead>Status</TableHead>
+   499→                <TableHead>Notes</TableHead>
+   500→                <TableHead className="text-right">Actions</TableHead>
+   501→              </TableRow>
+   502→            </TableHeader>
+   503→            <TableBody>
+   504→              {users.map((u) => (
+   505→                <TableRow key={u.id}>
+   506→                  <TableCell>
+   507→                    <div className="flex items-center gap-2">
+   508→                      <Avatar className="size-7">
+   509→                        {u.avatarUrl && <AvatarImage src={u.avatarUrl} />}
+   510→                        <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   511→                          {u.name.charAt(0)}
+   512→                        </AvatarFallback>
+   513→                      </Avatar>
+   514→                      <div className="min-w-0">
+   515→                        <p className="text-sm font-medium truncate max-w-[150px]">{u.name}</p>
+   516→                        <p className="text-[10px] text-muted-foreground truncate max-w-[150px]">{u.email}</p>
+   517→                      </div>
+   518→                    </div>
+   519→                  </TableCell>
+   520→                  <TableCell>
+   521→                    <Badge className={`text-[10px] ${roleBadgeColor(u.role)}`}>
+   522→                      {u.role.replace('_', ' ')}
+   523→                    </Badge>
+   524→                  </TableCell>
+   525→                  <TableCell>
+   526→                    <Badge variant={u.isActive ? 'secondary' : 'destructive'} className="text-[10px]">
+   527→                      {u.isActive ? 'Active' : 'Suspended'}
+   528→                    </Badge>
+   529→                  </TableCell>
+   530→                  <TableCell className="text-sm">{u._count?.notes ?? 0}</TableCell>
+   531→                  <TableCell className="text-right">
+   532→                    <div className="flex items-center justify-end gap-1">
+   533→                      {!u.emailVerified && (
+   534→                        <Button
+   535→                          variant="ghost"
+   536→                          size="icon"
+   537→                          className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   538→                          onClick={() => actionMutation.mutate({ userId: u.id, action: 'verify' })}
+   539→                          title="Verify user"
+   540→                        >
+   541→                          <CheckCircle2 className="size-3.5 text-emerald-600" />
+   542→                        </Button>
+   543→                      )}
+   544→                      <Button
+   545→                        variant="ghost"
+   546→                        size="icon"
+   547→                        className="size-7 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+   548→                        onClick={() => actionMutation.mutate({ userId: u.id, action: 'promote' })}
+   549→                        title="Promote user"
+   550→                      >
+   551→                        <ArrowUpRight className="size-3.5 text-amber-600" />
+   552→                      </Button>
+   553→                      <Button
+   554→                        variant="ghost"
+   555→                        size="icon"
+   556→                        className="size-7 hover:bg-destructive/10"
+   557→                        onClick={() => actionMutation.mutate({ userId: u.id, action: u.isActive ? 'suspend' : 'unsuspend' })}
+   558→                        title={u.isActive ? 'Suspend user' : 'Unsuspend user'}
+   559→                      >
+   560→                        <Ban className={`size-3.5 ${u.isActive ? 'text-destructive' : 'text-emerald-600'}`} />
+   561→                      </Button>
+   562→                    </div>
+   563→                  </TableCell>
+   564→                </TableRow>
+   565→              ))}
+   566→            </TableBody>
+   567→          </Table>
+   568→        </Card>
+   569→      )}
+   570→
+   571→      {/* Pagination */}
+   572→      {totalPages > 1 && (
+   573→        <div className="flex items-center justify-center gap-2 pt-2">
+   574→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+   575→            <ChevronLeft className="size-4" /> Previous
+   576→          </Button>
+   577→          <span className="text-xs text-muted-foreground">
+   578→            Page {page} of {totalPages}
+   579→          </span>
+   580→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+   581→            Next <ChevronRight className="size-4" />
+   582→          </Button>
+   583→        </div>
+   584→      )}
+   585→    </div>
+   586→  );
+   587→}
+   588→
+   589→// ── Notes Tab ───────────────────────────────────────────────────
+   590→function NotesTab() {
+   591→  const queryClient = useQueryClient();
+   592→  const [statusFilter, setStatusFilter] = useState('all');
+   593→  const [page, setPage] = useState(1);
+   594→  const limit = 10;
+   595→
+   596→  const params = new URLSearchParams({
+   597→    page: String(page),
+   598→    limit: String(limit),
+   599→    ...(statusFilter !== 'all' && { status: statusFilter }),
+   600→  }).toString();
+   601→
+   602→  const { data, isLoading } = useQuery({
+   603→    queryKey: ['admin-notes', statusFilter, page],
+   604→    queryFn: () => fetchAdminNotes(params),
+   605→  });
+   606→
+   607→  const notes: {
+   608→    id: string; title: string; fileType: string; status: string;
+   609→    downloadCount: number; viewCount: number; avgRating: number;
+   610→    createdAt: string;
+   611→    uploader: { id: string; name: string; avatarUrl?: string };
+   612→    subject?: { name: string };
+   613→  }[] = data?.notes ?? [];
+   614→  const total = data?.total ?? 0;
+   615→  const totalPages = Math.ceil(total / limit);
+   616→
+   617→  const noteActionMutation = useMutation({
+   618→    mutationFn: ({ noteId, action }: { noteId: string; action: string }) =>
+   619→      adminAction('/api/admin/notes', 'PUT', { noteId, action }),
+   620→    onSuccess: (_, variables) => {
+   621→      queryClient.invalidateQueries({ queryKey: ['admin-notes'] });
+   622→      toast.success(`Note ${variables.action} successful`);
+   623→    },
+   624→    onError: (error) => toast.error(error.message),
+   625→  });
+   626→
+   627→  const statusBadge = (status: string) => {
+   628→    switch (status) {
+   629→      case 'active': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+   630→      case 'processing': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+   631→      case 'flagged': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300';
+   632→      case 'removed': return 'bg-destructive/10 text-destructive';
+   633→      case 'draft': return 'bg-muted text-muted-foreground';
+   634→      default: return 'bg-muted text-muted-foreground';
+   635→    }
+   636→  };
+   637→
+   638→  return (
+   639→    <div className="space-y-4">
+   640→      {/* Filters */}
+   641→      <div className="flex items-center gap-3">
+   642→        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+   643→          <SelectTrigger className="h-9 w-[160px]">
+   644→            <SelectValue placeholder="Filter by status" />
+   645→          </SelectTrigger>
+   646→          <SelectContent>
+   647→            <SelectItem value="all">All Statuses</SelectItem>
+   648→            <SelectItem value="active">Active</SelectItem>
+   649→            <SelectItem value="processing">Processing</SelectItem>
+   650→            <SelectItem value="flagged">Flagged</SelectItem>
+   651→            <SelectItem value="removed">Removed</SelectItem>
+   652→            <SelectItem value="draft">Draft</SelectItem>
+   653→          </SelectContent>
+   654→        </Select>
+   655→        <span className="text-xs text-muted-foreground">{total} notes</span>
+   656→      </div>
+   657→
+   658→      {/* Table */}
+   659→      {isLoading ? (
+   660→        <TableSkeleton cols={6} />
+   661→      ) : notes.length === 0 ? (
+   662→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   663→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   664→            <FileText className="size-8 text-muted-foreground" />
+   665→          </div>
+   666→          <h3 className="font-semibold">No notes found</h3>
+   667→          <p className="text-sm text-muted-foreground mt-1">No notes match the current filter.</p>
+   668→        </motion.div>
+   669→      ) : (
+   670→        <Card className="border-0 shadow-sm">
+   671→          <Table>
+   672→            <TableHeader>
+   673→              <TableRow>
+   674→                <TableHead>Note</TableHead>
+   675→                <TableHead>Status</TableHead>
+   676→                <TableHead>Type</TableHead>
+   677→                <TableHead>Stats</TableHead>
+   678→                <TableHead>Uploader</TableHead>
+   679→                <TableHead className="text-right">Actions</TableHead>
+   680→              </TableRow>
+   681→            </TableHeader>
+   682→            <TableBody>
+   683→              {notes.map((n) => (
+   684→                <TableRow key={n.id}>
+   685→                  <TableCell>
+   686→                    <div className="min-w-0">
+   687→                      <p className="text-sm font-medium truncate max-w-[200px]">{n.title}</p>
+   688→                      {n.subject && (
+   689→                        <p className="text-[10px] text-muted-foreground">{n.subject.name}</p>
+   690→                      )}
+   691→                    </div>
+   692→                  </TableCell>
+   693→                  <TableCell>
+   694→                    <Badge className={`text-[10px] ${statusBadge(n.status)}`}>
+   695→                      {n.status}
+   696→                    </Badge>
+   697→                  </TableCell>
+   698→                  <TableCell>
+   699→                    <Badge variant="outline" className="text-[10px] font-mono">
+   700→                      {n.fileType?.toUpperCase() || 'FILE'}
+   701→                    </Badge>
+   702→                  </TableCell>
+   703→                  <TableCell>
+   704→                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+   705→                      <span className="flex items-center gap-0.5"><Download className="size-3" />{n.downloadCount}</span>
+   706→                      <span className="flex items-center gap-0.5"><Eye className="size-3" />{n.viewCount}</span>
+   707→                      <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{n.avgRating > 0 ? n.avgRating.toFixed(1) : '—'}</span>
+   708→                    </div>
+   709→                  </TableCell>
+   710→                  <TableCell>
+   711→                    <div className="flex items-center gap-1.5">
+   712→                      <Avatar className="size-5">
+   713→                        {n.uploader.avatarUrl && <AvatarImage src={n.uploader.avatarUrl} />}
+   714→                        <AvatarFallback className="text-[8px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   715→                          {n.uploader.name.charAt(0)}
+   716→                        </AvatarFallback>
+   717→                      </Avatar>
+   718→                      <span className="text-xs text-muted-foreground truncate max-w-[80px]">{n.uploader.name}</span>
+   719→                    </div>
+   720→                  </TableCell>
+   721→                  <TableCell className="text-right">
+   722→                    <div className="flex items-center justify-end gap-1">
+   723→                      {n.status !== 'flagged' && (
+   724→                        <Button
+   725→                          variant="ghost"
+   726→                          size="icon"
+   727→                          className="size-7 hover:bg-orange-50 dark:hover:bg-orange-900/30"
+   728→                          onClick={() => noteActionMutation.mutate({ noteId: n.id, action: 'flag' })}
+   729→                          title="Flag note"
+   730→                        >
+   731→                          <Flag className="size-3.5 text-orange-500" />
+   732→                        </Button>
+   733→                      )}
+   734→                      <Button
+   735→                        variant="ghost"
+   736→                        size="icon"
+   737→                        className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   738→                        onClick={() => noteActionMutation.mutate({ noteId: n.id, action: 'feature' })}
+   739→                        title="Feature note"
+   740→                      >
+   741→                        <Star className="size-3.5 text-emerald-600" />
+   742→                      </Button>
+   743→                      <Button
+   744→                        variant="ghost"
+   745→                        size="icon"
+   746→                        className="size-7 hover:bg-destructive/10"
+   747→                        onClick={() => noteActionMutation.mutate({ noteId: n.id, action: 'remove' })}
+   748→                        title="Remove note"
+   749→                      >
+   750→                        <Trash2 className="size-3.5 text-destructive" />
+   751→                      </Button>
+   752→                    </div>
+   753→                  </TableCell>
+   754→                </TableRow>
+   755→              ))}
+   756→            </TableBody>
+   757→          </Table>
+   758→        </Card>
+   759→      )}
+   760→
+   761→      {/* Pagination */}
+   762→      {totalPages > 1 && (
+   763→        <div className="flex items-center justify-center gap-2 pt-2">
+   764→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+   765→            <ChevronLeft className="size-4" /> Previous
+   766→          </Button>
+   767→          <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+   768→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+   769→            Next <ChevronRight className="size-4" />
+   770→          </Button>
+   771→        </div>
+   772→      )}
+   773→    </div>
+   774→  );
+   775→}
+   776→
+   777→// ── Reports Tab ─────────────────────────────────────────────────
+   778→function ReportsTab() {
+   779→  const queryClient = useQueryClient();
+   780→  const [statusFilter, setStatusFilter] = useState('pending');
+   781→  const [page, setPage] = useState(1);
+   782→  const limit = 10;
+   783→
+   784→  const params = new URLSearchParams({
+   785→    page: String(page),
+   786→    limit: String(limit),
+   787→    ...(statusFilter !== 'all' && { status: statusFilter }),
+   788→  }).toString();
+   789→
+   790→  const { data, isLoading } = useQuery({
+   791→    queryKey: ['admin-reports', statusFilter, page],
+   792→    queryFn: () => fetchAdminReports(params),
+   793→  });
+   794→
+   795→  const reports: {
+   796→    id: string; targetType: string; targetId: string; reason: string;
+   797→    description?: string; status: string; createdAt: string;
+   798→    reporter: { id: string; name: string; avatarUrl?: string };
+   799→  }[] = data?.reports ?? [];
+   800→  const total = data?.total ?? 0;
+   801→  const totalPages = Math.ceil(total / limit);
+   802→
+   803→  const reportActionMutation = useMutation({
+   804→    mutationFn: ({ reportId, action }: { reportId: string; action: string }) =>
+   805→      adminAction('/api/admin/reports', 'PUT', { reportId, action }),
+   806→    onSuccess: (_, variables) => {
+   807→      queryClient.invalidateQueries({ queryKey: ['admin-reports'] });
+   808→      toast.success(`Report ${variables.action === 'resolve' ? 'resolved' : 'dismissed'}`);
+   809→    },
+   810→    onError: (error) => toast.error(error.message),
+   811→  });
+   812→
+   813→  const statusBadgeColor = (status: string) => {
+   814→    switch (status) {
+   815→      case 'pending': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+   816→      case 'resolved': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+   817→      case 'dismissed': return 'bg-muted text-muted-foreground';
+   818→      default: return 'bg-muted text-muted-foreground';
+   819→    }
+   820→  };
+   821→
+   822→  return (
+   823→    <div className="space-y-4">
+   824→      {/* Filters */}
+   825→      <div className="flex items-center gap-3">
+   826→        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+   827→          <SelectTrigger className="h-9 w-[160px]">
+   828→            <SelectValue placeholder="Filter by status" />
+   829→          </SelectTrigger>
+   830→          <SelectContent>
+   831→            <SelectItem value="all">All Statuses</SelectItem>
+   832→            <SelectItem value="pending">Pending</SelectItem>
+   833→            <SelectItem value="resolved">Resolved</SelectItem>
+   834→            <SelectItem value="dismissed">Dismissed</SelectItem>
+   835→          </SelectContent>
+   836→        </Select>
+   837→        <span className="text-xs text-muted-foreground">{total} reports</span>
+   838→      </div>
+   839→
+   840→      {/* Reports list */}
+   841→      {isLoading ? (
+   842→        <TableSkeleton cols={4} />
+   843→      ) : reports.length === 0 ? (
+   844→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   845→          <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 p-4 mb-4">
+   846→            <CheckCircle2 className="size-8 text-emerald-600" />
+   847→          </div>
+   848→          <h3 className="font-semibold">
+   849→            {statusFilter === 'pending' ? 'All clear!' : 'No reports found'}
+   850→          </h3>
+   851→          <p className="text-sm text-muted-foreground mt-1">
+   852→            {statusFilter === 'pending' ? 'No pending reports to review.' : 'No reports match the current filter.'}
+   853→          </p>
+   854→        </motion.div>
+   855→      ) : (
+   856→        <div className="space-y-3">
+   857→          {reports.map((report) => (
+   858→            <motion.div
+   859→              key={report.id}
+   860→              initial={{ opacity: 0, y: 5 }}
+   861→              animate={{ opacity: 1, y: 0 }}
+   862→            >
+   863→              <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+   864→                <CardContent className="p-4">
+   865→                  <div className="flex items-start gap-3">
+   866→                    <Avatar className="size-8 mt-0.5">
+   867→                      {report.reporter.avatarUrl && <AvatarImage src={report.reporter.avatarUrl} />}
+   868→                      <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   869→                        {report.reporter.name.charAt(0)}
+   870→                      </AvatarFallback>
+   871→                    </Avatar>
+   872→                    <div className="flex-1 min-w-0 space-y-1">
+   873→                      <div className="flex items-center gap-2 flex-wrap">
+   874→                        <span className="text-sm font-medium">{report.reason}</span>
+   875→                        <Badge className={`text-[10px] ${statusBadgeColor(report.status)}`}>
+   876→                          {report.status}
+   877→                        </Badge>
+   878→                        <Badge variant="outline" className="text-[10px]">
+   879→                          {report.targetType}
+   880→                        </Badge>
+   881→                      </div>
+   882→                      {report.description && (
+   883→                        <p className="text-xs text-muted-foreground line-clamp-2">{report.description}</p>
+   884→                      )}
+   885→                      <p className="text-[10px] text-muted-foreground">
+   886→                        Reported by {report.reporter.name} · {new Date(report.createdAt).toLocaleDateString()}
+   887→                      </p>
+   888→                    </div>
+   889→                    {report.status === 'pending' && (
+   890→                      <div className="flex items-center gap-1 shrink-0">
+   891→                        <Button
+   892→                          variant="outline"
+   893→                          size="sm"
+   894→                          className="h-7 text-xs gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800"
+   895→                          onClick={() => reportActionMutation.mutate({ reportId: report.id, action: 'resolve' })}
+   896→                        >
+   897→                          <CheckCircle2 className="size-3" /> Resolve
+   898→                        </Button>
+   899→                        <Button
+   900→                          variant="outline"
+   901→                          size="sm"
+   902→                          className="h-7 text-xs gap-1"
+   903→                          onClick={() => reportActionMutation.mutate({ reportId: report.id, action: 'dismiss' })}
+   904→                        >
+   905→                          <X className="size-3" /> Dismiss
+   906→                        </Button>
+   907→                      </div>
+   908→                    )}
+   909→                  </div>
+   910→                </CardContent>
+   911→              </Card>
+   912→            </motion.div>
+   913→          ))}
+   914→        </div>
+   915→      )}
+   916→
+   917→      {/* Pagination */}
+   918→      {totalPages > 1 && (
+   919→        <div className="flex items-center justify-center gap-2 pt-2">
+   920→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+   921→            <ChevronLeft className="size-4" /> Previous
+   922→          </Button>
+   923→          <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+   924→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+   925→            Next <ChevronRight className="size-4" />
+   926→          </Button>
+   927→        </div>
+   928→      )}
+   929→    </div>
+   930→  );
+   931→}
+   932→
+   933→// ── Colleges Tab ────────────────────────────────────────────────
+   934→function CollegesTab() {
+   935→  const queryClient = useQueryClient();
+   936→  const [page, setPage] = useState(1);
+   937→  const [addDialogOpen, setAddDialogOpen] = useState(false);
+   938→  const [newCollege, setNewCollege] = useState({ name: '', shortName: '', city: '', state: '' });
+   939→  const limit = 10;
+   940→
+   941→  const params = new URLSearchParams({
+   942→    page: String(page),
+   943→    limit: String(limit),
+   944→  }).toString();
+   945→
+   946→  const { data, isLoading } = useQuery({
+   947→    queryKey: ['admin-colleges', page],
+   948→    queryFn: () => fetchAdminColleges(params),
+   949→  });
+   950→
+   951→  const colleges: CollegeData[] = data?.colleges ?? [];
+   952→  const total = data?.total ?? 0;
+   953→  const totalPages = Math.ceil(total / limit);
+   954→
+   955→  const addCollegeMutation = useMutation({
+   956→    mutationFn: (college: typeof newCollege) =>
+   957→      adminAction('/api/admin/colleges', 'POST', college),
+   958→    onSuccess: () => {
+   959→      queryClient.invalidateQueries({ queryKey: ['admin-colleges'] });
+   960→      setAddDialogOpen(false);
+   961→      setNewCollege({ name: '', shortName: '', city: '', state: '' });
+   962→      toast.success('College added successfully');
+   963→    },
+   964→    onError: (error) => toast.error(error.message),
+   965→  });
+   966→
+   967→  return (
+   968→    <div className="space-y-4">
+   969→      {/* Header with Add button */}
+   970→      <div className="flex items-center justify-between">
+   971→        <span className="text-xs text-muted-foreground">{total} colleges</span>
+   972→        <Button
+   973→          size="sm"
+   974→          className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+   975→          onClick={() => setAddDialogOpen(true)}
+   976→        >
+   977→          <Plus className="size-4" /> Add College
+   978→        </Button>
+   979→      </div>
+   980→
+   981→      {/* Colleges list */}
+   982→      {isLoading ? (
+   983→        <TableSkeleton cols={4} />
+   984→      ) : colleges.length === 0 ? (
+   985→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   986→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   987→            <GraduationCap className="size-8 text-muted-foreground" />
+   988→          </div>
+   989→          <h3 className="font-semibold">No colleges yet</h3>
+   990→          <p className="text-sm text-muted-foreground mt-1">Add the first college to get started.</p>
+   991→        </motion.div>
+   992→      ) : (
+   993→        <Card className="border-0 shadow-sm">
+   994→          <Table>
+   995→            <TableHeader>
+   996→              <TableRow>
+   997→                <TableHead>College</TableHead>
+   998→                <TableHead>Location</TableHead>
+   999→                <TableHead>Verified</TableHead>
+  1000→                <TableHead>Notes</TableHead>
+  1001→              </TableRow>
+  1002→            </TableHeader>
+  1003→            <TableBody>
+  1004→              {colleges.map((college) => (
+  1005→                <TableRow key={college.id}>
+  1006→                  <TableCell>
+  1007→                    <div className="min-w-0">
+  1008→                      <p className="text-sm font-medium">{college.name}</p>
+  1009→                      {college.shortName && (
+  1010→                        <p className="text-[10px] text-muted-foreground">{college.shortName}</p>
+  1011→                      )}
+  1012→                    </div>
+  1013→                  </TableCell>
+  1014→                  <TableCell className="text-xs text-muted-foreground">
+  1015→                    {[college.city, college.state].filter(Boolean).join(', ') || '—'}
+  1016→                  </TableCell>
+  1017→                  <TableCell>
+  1018→                    {college.isVerified ? (
+  1019→                      <Badge className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+  1020→                        Verified
+  1021→                      </Badge>
+  1022→                    ) : (
+  1023→                      <Badge variant="outline" className="text-[10px]">Unverified</Badge>
+  1024→                    )}
+  1025→                  </TableCell>
+  1026→                  <TableCell className="text-sm">{college.noteCount}</TableCell>
+  1027→                </TableRow>
+  1028→              ))}
+  1029→            </TableBody>
+  1030→          </Table>
+  1031→        </Card>
+  1032→      )}
+  1033→
+  1034→      {/* Pagination */}
+  1035→      {totalPages > 1 && (
+  1036→        <div className="flex items-center justify-center gap-2 pt-2">
+  1037→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+  1038→            <ChevronLeft className="size-4" /> Previous
+  1039→          </Button>
+  1040→          <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+  1041→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+  1042→            Next <ChevronRight className="size-4" />
+  1043→          </Button>
+  1044→        </div>
+  1045→      )}
+  1046→
+  1047→      {/* Add College Dialog */}
+  1048→      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+  1049→        <DialogContent>
+  1050→          <DialogHeader>
+  1051→            <DialogTitle>Add New College</DialogTitle>
+  1052→            <DialogDescription>Add a new college to the platform.</DialogDescription>
+  1053→          </DialogHeader>
+  1054→          <div className="space-y-4 py-2">
+  1055→            <div className="space-y-2">
+  1056→              <Label htmlFor="college-name">College Name *</Label>
+  1057→              <Input
+  1058→                id="college-name"
+  1059→                value={newCollege.name}
+  1060→                onChange={(e) => setNewCollege((p) => ({ ...p, name: e.target.value }))}
+  1061→                placeholder="e.g., Indian Institute of Technology Delhi"
+  1062→              />
+  1063→            </div>
+  1064→            <div className="grid grid-cols-2 gap-3">
+  1065→              <div className="space-y-2">
+  1066→                <Label htmlFor="short-name">Short Name</Label>
+  1067→                <Input
+  1068→                  id="short-name"
+  1069→                  value={newCollege.shortName}
+  1070→                  onChange={(e) => setNewCollege((p) => ({ ...p, shortName: e.target.value }))}
+  1071→                  placeholder="e.g., IIT Delhi"
+  1072→                />
+  1073→              </div>
+  1074→              <div className="space-y-2">
+  1075→                <Label htmlFor="city">City</Label>
+  1076→                <Input
+  1077→                  id="city"
+  1078→                  value={newCollege.city}
+  1079→                  onChange={(e) => setNewCollege((p) => ({ ...p, city: e.target.value }))}
+  1080→                  placeholder="e.g., New Delhi"
+  1081→                />
+  1082→              </div>
+  1083→            </div>
+  1084→            <div className="space-y-2">
+  1085→              <Label htmlFor="state">State</Label>
+  1086→              <Input
+  1087→                id="state"
+  1088→                value={newCollege.state}
+  1089→                onChange={(e) => setNewCollege((p) => ({ ...p, state: e.target.value }))}
+  1090→                placeholder="e.g., Delhi"
+  1091→              />
+  1092→            </div>
+  1093→          </div>
+  1094→          <DialogFooter>
+  1095→            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+  1096→            <Button
+  1097→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1098→              disabled={!newCollege.name.trim() || addCollegeMutation.isPending}
+  1099→              onClick={() => addCollegeMutation.mutate(newCollege)}
+  1100→            >
+  1101→              {addCollegeMutation.isPending ? 'Adding...' : 'Add College'}
+  1102→            </Button>
+  1103→          </DialogFooter>
+  1104→        </DialogContent>
+  1105→      </Dialog>
+  1106→    </div>
+  1107→  );
+  1108→}
+  1109→

@@ -151,6 +151,8 @@ function NotificationItem({
       layout
     >
       <Card
+        role="button"
+        tabIndex={0}
         className={`border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group ${
           !notification.isRead ? 'bg-emerald-50/50 dark:bg-emerald-950/10 border-l-2 border-l-emerald-500' : ''
         }`}

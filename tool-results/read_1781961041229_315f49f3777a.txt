@@ -1,0 +1,753 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useCallback, useRef } from 'react';
+     4→import { useQuery, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/store/app-store';
+     6→import { motion, AnimatePresence } from 'framer-motion';
+     7→import {
+     8→  Search,
+     9→  X,
+    10→  SlidersHorizontal,
+    11→  Download,
+    12→  Star,
+    13→  Eye,
+    14→  Bookmark,
+    15→  ChevronLeft,
+    16→  ChevronRight,
+    17→  TrendingUp,
+    18→  Clock,
+    19→  FileText,
+    20→  Sparkles,
+    21→} from 'lucide-react';
+    22→import { Card, CardContent } from '@/components/ui/card';
+    23→import { Button } from '@/components/ui/button';
+    24→import { Badge } from '@/components/ui/badge';
+    25→import { Skeleton } from '@/components/ui/skeleton';
+    26→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    27→import { Input } from '@/components/ui/input';
+    28→import {
+    29→  Select,
+    30→  SelectContent,
+    31→  SelectItem,
+    32→  SelectTrigger,
+    33→  SelectValue,
+    34→} from '@/components/ui/select';
+    35→import {
+    36→  Collapsible,
+    37→  CollapsibleContent,
+    38→  CollapsibleTrigger,
+    39→} from '@/components/ui/collapsible';
+    40→import type { NoteCard, NoteFileType } from '@/types';
+    41→
+    42→// ── Animation variants ──────────────────────────────────────────
+    43→const gridContainer = {
+    44→  hidden: { opacity: 0 },
+    45→  show: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
+    46→};
+    47→const gridItem = {
+    48→  hidden: { opacity: 0, y: 20 },
+    49→  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    50→};
+    51→
+    52→// ── Helpers ─────────────────────────────────────────────────────
+    53→function formatRelativeTime(dateStr: string) {
+    54→  const diff = Date.now() - new Date(dateStr).getTime();
+    55→  const mins = Math.floor(diff / 60000);
+    56→  if (mins < 60) return `${mins}m ago`;
+    57→  const hrs = Math.floor(mins / 60);
+    58→  if (hrs < 24) return `${hrs}h ago`;
+    59→  const days = Math.floor(hrs / 24);
+    60→  if (days < 30) return `${days}d ago`;
+    61→  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    62→}
+    63→
+    64→function fileTypeIcon(type?: string | null) {
+    65→  switch (type) {
+    66→    case 'pdf': return '📕';
+    67→    case 'docx': return '📘';
+    68→    case 'pptx': return '📙';
+    69→    case 'txt': return '📄';
+    70→    case 'md': return '📝';
+    71→    case 'image': return '🖼️';
+    72→    default: return '📋';
+    73→  }
+    74→}
+    75→
+    76→function fileTypeLabel(type?: string | null) {
+    77→  const labels: Record<string, string> = { pdf: 'PDF', docx: 'DOCX', pptx: 'PPTX', txt: 'TXT', md: 'MD', image: 'Image' };
+    78→  return type ? labels[type] || type.toUpperCase() : 'FILE';
+    79→}
+    80→
+    81→// ── Local Storage for recent searches ───────────────────────────
+    82→const RECENT_KEY = 'notespedia-recent-searches';
+    83→
+    84→function getRecentSearches(): string[] {
+    85→  if (typeof window === 'undefined') return [];
+    86→  try {
+    87→    const stored = localStorage.getItem(RECENT_KEY);
+    88→    return stored ? JSON.parse(stored) : [];
+    89→  } catch {
+    90→    return [];
+    91→  }
+    92→}
+    93→
+    94→function addRecentSearch(query: string) {
+    95→  if (!query.trim()) return;
+    96→  try {
+    97→    const recent = getRecentSearches().filter((s) => s !== query.trim());
+    98→    recent.unshift(query.trim());
+    99→    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, 8)));
+   100→  } catch {
+   101→    // Silently fail
+   102→  }
+   103→}
+   104→
+   105→function clearRecentSearches() {
+   106→  try {
+   107→    localStorage.removeItem(RECENT_KEY);
+   108→  } catch {
+   109→    // Silently fail
+   110→  }
+   111→}
+   112→
+   113→// ── Fetchers ────────────────────────────────────────────────────
+   114→async function fetchSearch(params: Record<string, string>) {
+   115→  const qs = new URLSearchParams(params).toString();
+   116→  const res = await fetch(`/api/search?${qs}`);
+   117→  if (!res.ok) throw new Error('Failed to search');
+   118→  return res.json();
+   119→}
+   120→
+   121→async function fetchColleges() {
+   122→  const res = await fetch('/api/colleges?limit=100');
+   123→  if (!res.ok) throw new Error('Failed');
+   124→  return res.json();
+   125→}
+   126→
+   127→async function fetchSubjects() {
+   128→  const res = await fetch('/api/subjects?limit=100');
+   129→  if (!res.ok) throw new Error('Failed');
+   130→  return res.json();
+   131→}
+   132→
+   133→// ── Note Card ───────────────────────────────────────────────────
+   134→function NoteCardItem({ note, onClick, onBookmark }: { note: NoteCard; onClick: () => void; onBookmark: (e: React.MouseEvent) => void }) {
+   135→  return (
+   136→    <motion.div
+   137→      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+   138→      whileTap={{ scale: 0.98 }}
+   139→      className="cursor-pointer"
+   140→      onClick={onClick}
+   141→    >
+   142→      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
+   143→        <div className={`h-1 w-full ${
+   144→          note.fileType === 'pdf' ? 'bg-red-400' :
+   145→          note.fileType === 'docx' ? 'bg-blue-400' :
+   146→          note.fileType === 'pptx' ? 'bg-orange-400' :
+   147→          note.fileType === 'md' ? 'bg-purple-400' :
+   148→          'bg-emerald-400'
+   149→        }`} />
+   150→        <CardContent className="p-4 space-y-3">
+   151→          <div className="flex items-start gap-3">
+   152→            <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
+   153→            <div className="min-w-0 flex-1">
+   154→              <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+   155→                {note.title}
+   156→              </h3>
+   157→              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+   158→                {note.subject && (
+   159→                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   160→                    {note.subject.name}
+   161→                  </Badge>
+   162→                )}
+   163→                {note.semester && (
+   164→                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+   165→                    Sem {note.semester}
+   166→                  </Badge>
+   167→                )}
+   168→                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+   169→                  {fileTypeLabel(note.fileType)}
+   170→                </Badge>
+   171→              </div>
+   172→            </div>
+   173→          </div>
+   174→
+   175→          {note.description && (
+   176→            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{note.description}</p>
+   177→          )}
+   178→
+   179→          {note.tags && note.tags.length > 0 && (
+   180→            <div className="flex flex-wrap gap-1">
+   181→              {note.tags.slice(0, 3).map((tag) => (
+   182→                <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+   183→                  #{tag}
+   184→                </Badge>
+   185→              ))}
+   186→              {note.tags.length > 3 && (
+   187→                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+   188→                  +{note.tags.length - 3}
+   189→                </Badge>
+   190→              )}
+   191→            </div>
+   192→          )}
+   193→
+   194→          <div className="flex items-center gap-2 pt-0.5">
+   195→            <Avatar className="size-5">
+   196→              {note.uploader.avatarUrl && <AvatarImage src={note.uploader.avatarUrl} />}
+   197→              <AvatarFallback className="text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   198→                {note.uploader.name.charAt(0)}
+   199→              </AvatarFallback>
+   200→            </Avatar>
+   201→            <span className="text-[11px] text-muted-foreground truncate">{note.uploader.name}</span>
+   202→            <span className="ml-auto text-[10px] text-muted-foreground">{formatRelativeTime(note.createdAt)}</span>
+   203→          </div>
+   204→
+   205→          <div className="flex items-center justify-between pt-0.5">
+   206→            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+   207→              <span className="flex items-center gap-0.5"><Download className="size-3" />{note.downloadCount}</span>
+   208→              <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{note.avgRating > 0 ? note.avgRating.toFixed(1) : '—'}</span>
+   209→              <span className="flex items-center gap-0.5"><Eye className="size-3" />{note.viewCount}</span>
+   210→            </div>
+   211→            <Button
+   212→              variant="ghost"
+   213→              size="icon"
+   214→              className="size-7 rounded-full hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   215→              onClick={onBookmark}
+   216→            >
+   217→              <Bookmark className={`size-3.5 ${note.isBookmarked ? 'fill-emerald-500 text-emerald-500' : 'text-muted-foreground'}`} />
+   218→            </Button>
+   219→          </div>
+   220→        </CardContent>
+   221→      </Card>
+   222→    </motion.div>
+   223→  );
+   224→}
+   225→
+   226→// ── Note Grid Skeleton ──────────────────────────────────────────
+   227→function NoteGridSkeleton() {
+   228→  return (
+   229→    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   230→      {Array.from({ length: 9 }).map((_, i) => (
+   231→        <Card key={i} className="border-0 shadow-sm">
+   232→          <div className="h-1 w-full bg-muted" />
+   233→          <CardContent className="p-4 space-y-3">
+   234→            <div className="flex items-start gap-3">
+   235→              <Skeleton className="size-8 rounded" />
+   236→              <div className="flex-1 space-y-2">
+   237→                <Skeleton className="h-4 w-3/4" />
+   238→                <div className="flex gap-1.5">
+   239→                  <Skeleton className="h-4 w-14 rounded-full" />
+   240→                  <Skeleton className="h-4 w-10 rounded-full" />
+   241→                </div>
+   242→              </div>
+   243→            </div>
+   244→            <Skeleton className="h-3 w-full" />
+   245→            <Skeleton className="h-3 w-2/3" />
+   246→            <div className="flex items-center gap-2">
+   247→              <Skeleton className="size-5 rounded-full" />
+   248→              <Skeleton className="h-3 w-20" />
+   249→            </div>
+   250→          </CardContent>
+   251→        </Card>
+   252→      ))}
+   253→    </div>
+   254→  );
+   255→}
+   256→
+   257→// ── Main Search Page ────────────────────────────────────────────
+   258→export function SearchPage() {
+   259→  const { navigate, searchQuery: storeQuery, setSearchQuery } = useAppStore();
+   260→  const queryClient = useQueryClient();
+   261→
+   262→  // Search state — storeQuery is the source of truth, inputValue mirrors it
+   263→  const [inputValue, setInputValue] = useState(storeQuery || '');
+   264→  const [debouncedQuery, setDebouncedQuery] = useState(storeQuery || '');
+   265→  const [filtersOpen, setFiltersOpen] = useState(false);
+   266→  const [collegeId, setCollegeId] = useState<string>('_all');
+   267→  const [departmentId, setDepartmentId] = useState<string>('_all');
+   268→  const [subjectId, setSubjectId] = useState<string>('_all');
+   269→  const [semester, setSemester] = useState<string>('_all');
+   270→  const [fileType, setFileType] = useState<string>('_all');
+   271→  const [sortBy, setSortBy] = useState<string>('relevance');
+   272→  const [page, setPage] = useState(1);
+   273→  const [recentSearches, setRecentSearches] = useState<string[]>(() => getRecentSearches());
+   274→  const limit = 12;
+   275→  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+   276→
+   277→  // Debounce input → trigger search
+   278→  const handleInputChange = useCallback((value: string) => {
+   279→    setInputValue(value);
+   280→    setSearchQuery(value);
+   281→    if (debounceRef.current) clearTimeout(debounceRef.current);
+   282→    debounceRef.current = setTimeout(() => {
+   283→      setDebouncedQuery(value);
+   284→      setPage(1);
+   285→    }, 300);
+   286→  }, [setSearchQuery]);
+   287→
+   288→  // Clear search
+   289→  const handleClear = useCallback(() => {
+   290→    setInputValue('');
+   291→    setDebouncedQuery('');
+   292→    setSearchQuery('');
+   293→    setPage(1);
+   294→  }, [setSearchQuery]);
+   295→
+   296→  // Submit search (Enter key)
+   297→  const handleSubmit = useCallback(() => {
+   298→    if (debouncedQuery.trim()) {
+   299→      addRecentSearch(debouncedQuery);
+   300→      setRecentSearches(getRecentSearches());
+   301→    }
+   302→  }, [debouncedQuery]);
+   303→
+   304→  // Click recent search
+   305→  const handleRecentClick = useCallback((query: string) => {
+   306→    setInputValue(query);
+   307→    setDebouncedQuery(query);
+   308→    setSearchQuery(query);
+   309→    setPage(1);
+   310→  }, [setSearchQuery]);
+   311→
+   312→  // Trending tags
+   313→  const trendingTags = ['Data Structures', 'Machine Learning', 'Calculus', 'Thermodynamics', 'Organic Chemistry', 'Microeconomics', 'Discrete Math', 'Operating Systems'];
+   314→
+   315→  // Fetch colleges & subjects for filters
+   316→  const { data: collegesData } = useQuery({
+   317→    queryKey: ['search-colleges'],
+   318→    queryFn: fetchColleges,
+   319→  });
+   320→  const { data: subjectsData } = useQuery({
+   321→    queryKey: ['search-subjects'],
+   322→    queryFn: fetchSubjects,
+   323→  });
+   324→
+   325→  // Build search query params
+   326→  const hasActiveQuery = debouncedQuery.trim().length > 0;
+   327→  const queryParams: Record<string, string> = {
+   328→    q: debouncedQuery.trim(),
+   329→    page: String(page),
+   330→    limit: String(limit),
+   331→    sortBy,
+   332→  };
+   333→  if (collegeId && collegeId !== '_all') queryParams.collegeId = collegeId;
+   334→  if (departmentId && departmentId !== '_all') queryParams.departmentId = departmentId;
+   335→  if (subjectId && subjectId !== '_all') queryParams.subjectId = subjectId;
+   336→  if (semester && semester !== '_all') queryParams.semester = semester;
+   337→  if (fileType && fileType !== '_all') queryParams.fileType = fileType;
+   338→
+   339→  // Fetch search results
+   340→  const { data: searchData, isLoading, isError } = useQuery({
+   341→    queryKey: ['search', queryParams],
+   342→    queryFn: () => fetchSearch(queryParams),
+   343→    enabled: hasActiveQuery,
+   344→  });
+   345→
+   346→  const notes: NoteCard[] = searchData?.notes ?? [];
+   347→  const totalPages: number = searchData?.totalPages ?? 1;
+   348→  const total: number = searchData?.total ?? 0;
+   349→  const hasFilters = collegeId !== '_all' || departmentId !== '_all' || subjectId !== '_all' || semester !== '_all' || fileType !== '_all';
+   350→
+   351→  // Bookmark handler
+   352→  const handleBookmark = useCallback(async (e: React.MouseEvent, note: NoteCard) => {
+   353→    e.stopPropagation();
+   354→    try {
+   355→      if (note.isBookmarked) {
+   356→        await fetch(`/api/bookmarks?noteId=${note.id}`, { method: 'DELETE' });
+   357→      } else {
+   358→        await fetch('/api/bookmarks', {
+   359→          method: 'POST',
+   360→          headers: { 'Content-Type': 'application/json' },
+   361→          body: JSON.stringify({ noteId: note.id }),
+   362→        });
+   363→      }
+   364→      queryClient.invalidateQueries({ queryKey: ['search'] });
+   365→    } catch {
+   366→      // Silently fail
+   367→    }
+   368→  }, [queryClient]);
+   369→
+   370→  const clearFilters = () => {
+   371→    setCollegeId('_all');
+   372→    setDepartmentId('_all');
+   373→    setSubjectId('_all');
+   374→    setSemester('_all');
+   375→    setFileType('_all');
+   376→    setSortBy('relevance');
+   377→    setPage(1);
+   378→  };
+   379→
+   380→  const clearRecent = () => {
+   381→    clearRecentSearches();
+   382→    setRecentSearches([]);
+   383→  };
+   384→
+   385→  // Departments for selected college
+   386→  const departments = (collegesData?.colleges ?? []).find(
+   387→    (c: { id: string }) => c.id === collegeId
+   388→  )?.departments ?? [];
+   389→
+   390→  return (
+   391→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+   392→      {/* ── Header & Search Input ──────────────────── */}
+   393→      <motion.div
+   394→        initial={{ opacity: 0, y: -10 }}
+   395→        animate={{ opacity: 1, y: 0 }}
+   396→        className="space-y-4"
+   397→      >
+   398→        <div>
+   399→          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Search Notes</h1>
+   400→          <p className="text-sm text-muted-foreground mt-0.5">Find academic resources across all colleges and subjects</p>
+   401→        </div>
+   402→
+   403→        {/* Large search input */}
+   404→        <div className="relative">
+   405→          <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+   406→          <Input
+   407→            type="text"
+   408→            value={inputValue}
+   409→            onChange={(e) => handleInputChange(e.target.value)}
+   410→            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+   411→            placeholder="Search notes by title, description, or content..."
+   412→            className="h-12 pl-12 pr-12 text-base rounded-xl border-2 focus:border-emerald-500 dark:focus:border-emerald-400 transition-colors"
+   413→          />
+   414→          {inputValue && (
+   415→            <Button
+   416→              variant="ghost"
+   417→              size="icon"
+   418→              className="absolute right-2 top-1/2 -translate-y-1/2 size-8 rounded-full hover:bg-muted"
+   419→              onClick={handleClear}
+   420→            >
+   421→              <X className="size-4" />
+   422→            </Button>
+   423→          )}
+   424→        </div>
+   425→      </motion.div>
+   426→
+   427→      {/* ── Collapsible Filter Panel ───────────────── */}
+   428→      <motion.div
+   429→        initial={{ opacity: 0, y: 5 }}
+   430→        animate={{ opacity: 1, y: 0 }}
+   431→        transition={{ delay: 0.1 }}
+   432→      >
+   433→        <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+   434→          <div className="flex items-center justify-between">
+   435→            <CollapsibleTrigger asChild>
+   436→              <Button variant="outline" size="sm" className="gap-2">
+   437→                <SlidersHorizontal className="size-4" />
+   438→                Filters
+   439→                {hasFilters && (
+   440→                  <Badge className="ml-1 size-5 p-0 text-[10px] flex items-center justify-center bg-emerald-600 text-white">
+   441→                    {[collegeId !== '_all', departmentId !== '_all', subjectId !== '_all', semester !== '_all', fileType !== '_all'].filter(Boolean).length}
+   442→                  </Badge>
+   443→                )}
+   444→              </Button>
+   445→            </CollapsibleTrigger>
+   446→            {hasFilters && (
+   447→              <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={clearFilters}>
+   448→                <X className="size-3" /> Clear filters
+   449→              </Button>
+   450→            )}
+   451→          </div>
+   452→          <CollapsibleContent>
+   453→            <Card className="mt-3 border-0 shadow-sm">
+   454→              <CardContent className="p-4">
+   455→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+   456→                  {/* College */}
+   457→                  <Select value={collegeId} onValueChange={(v) => { setCollegeId(v); setDepartmentId('_all'); setPage(1); }}>
+   458→                    <SelectTrigger className="h-9 text-xs">
+   459→                      <SelectValue placeholder="College" />
+   460→                    </SelectTrigger>
+   461→                    <SelectContent>
+   462→                      <SelectItem value="_all">All Colleges</SelectItem>
+   463→                      {(collegesData?.colleges ?? []).map((c: { id: string; name: string }) => (
+   464→                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+   465→                      ))}
+   466→                    </SelectContent>
+   467→                  </Select>
+   468→
+   469→                  {/* Department */}
+   470→                  <Select value={departmentId} onValueChange={(v) => { setDepartmentId(v); setPage(1); }}>
+   471→                    <SelectTrigger className="h-9 text-xs">
+   472→                      <SelectValue placeholder="Department" />
+   473→                    </SelectTrigger>
+   474→                    <SelectContent>
+   475→                      <SelectItem value="_all">All Departments</SelectItem>
+   476→                      {departments.map((d: { id: string; name: string }) => (
+   477→                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+   478→                      ))}
+   479→                    </SelectContent>
+   480→                  </Select>
+   481→
+   482→                  {/* Subject */}
+   483→                  <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setPage(1); }}>
+   484→                    <SelectTrigger className="h-9 text-xs">
+   485→                      <SelectValue placeholder="Subject" />
+   486→                    </SelectTrigger>
+   487→                    <SelectContent>
+   488→                      <SelectItem value="_all">All Subjects</SelectItem>
+   489→                      {(subjectsData?.subjects ?? []).map((s: { id: string; name: string }) => (
+   490→                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+   491→                      ))}
+   492→                    </SelectContent>
+   493→                  </Select>
+   494→
+   495→                  {/* Semester */}
+   496→                  <Select value={semester} onValueChange={(v) => { setSemester(v); setPage(1); }}>
+   497→                    <SelectTrigger className="h-9 text-xs">
+   498→                      <SelectValue placeholder="Semester" />
+   499→                    </SelectTrigger>
+   500→                    <SelectContent>
+   501→                      <SelectItem value="_all">All Semesters</SelectItem>
+   502→                      {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+   503→                        <SelectItem key={s} value={String(s)}>Sem {s}</SelectItem>
+   504→                      ))}
+   505→                    </SelectContent>
+   506→                  </Select>
+   507→
+   508→                  {/* File Type */}
+   509→                  <Select value={fileType} onValueChange={(v) => { setFileType(v); setPage(1); }}>
+   510→                    <SelectTrigger className="h-9 text-xs">
+   511→                      <SelectValue placeholder="File type" />
+   512→                    </SelectTrigger>
+   513→                    <SelectContent>
+   514→                      <SelectItem value="_all">All Types</SelectItem>
+   515→                      <SelectItem value="pdf">PDF</SelectItem>
+   516→                      <SelectItem value="docx">DOCX</SelectItem>
+   517→                      <SelectItem value="pptx">PPTX</SelectItem>
+   518→                      <SelectItem value="txt">TXT</SelectItem>
+   519→                      <SelectItem value="md">Markdown</SelectItem>
+   520→                      <SelectItem value="image">Image</SelectItem>
+   521→                    </SelectContent>
+   522→                  </Select>
+   523→
+   524→                  {/* Sort By */}
+   525→                  <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
+   526→                    <SelectTrigger className="h-9 text-xs">
+   527→                      <SelectValue placeholder="Sort by" />
+   528→                    </SelectTrigger>
+   529→                    <SelectContent>
+   530→                      <SelectItem value="relevance">Relevance</SelectItem>
+   531→                      <SelectItem value="newest">Newest</SelectItem>
+   532→                      <SelectItem value="downloads">Downloads</SelectItem>
+   533→                      <SelectItem value="rating">Rating</SelectItem>
+   534→                      <SelectItem value="views">Views</SelectItem>
+   535→                    </SelectContent>
+   536→                  </Select>
+   537→                </div>
+   538→              </CardContent>
+   539→            </Card>
+   540→          </CollapsibleContent>
+   541→        </Collapsible>
+   542→      </motion.div>
+   543→
+   544→      {/* ── No Active Query State ──────────────────── */}
+   545→      {!hasActiveQuery && (
+   546→        <motion.div
+   547→          initial={{ opacity: 0, y: 10 }}
+   548→          animate={{ opacity: 1, y: 0 }}
+   549→          transition={{ delay: 0.2 }}
+   550→          className="space-y-8"
+   551→        >
+   552→          {/* Recent Searches */}
+   553→          {recentSearches.length > 0 && (
+   554→            <section>
+   555→              <div className="flex items-center justify-between mb-3">
+   556→                <div className="flex items-center gap-2">
+   557→                  <Clock className="size-4 text-muted-foreground" />
+   558→                  <h2 className="text-sm font-semibold">Recent Searches</h2>
+   559→                </div>
+   560→                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={clearRecent}>
+   561→                  Clear all
+   562→                </Button>
+   563→              </div>
+   564→              <div className="flex flex-wrap gap-2">
+   565→                {recentSearches.map((query) => (
+   566→                  <motion.button
+   567→                    key={query}
+   568→                    whileHover={{ scale: 1.05 }}
+   569→                    whileTap={{ scale: 0.95 }}
+   570→                    onClick={() => handleRecentClick(query)}
+   571→                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 hover:bg-muted text-xs font-medium transition-colors"
+   572→                  >
+   573→                    <Clock className="size-3 text-muted-foreground" />
+   574→                    {query}
+   575→                  </motion.button>
+   576→                ))}
+   577→              </div>
+   578→            </section>
+   579→          )}
+   580→
+   581→          {/* Trending Tags */}
+   582→          <section>
+   583→            <div className="flex items-center gap-2 mb-3">
+   584→              <TrendingUp className="size-4 text-emerald-600" />
+   585→              <h2 className="text-sm font-semibold">Trending Topics</h2>
+   586→              <Sparkles className="size-3.5 text-amber-500" />
+   587→            </div>
+   588→            <div className="flex flex-wrap gap-2">
+   589→              {trendingTags.map((tag) => (
+   590→                <motion.button
+   591→                  key={tag}
+   592→                  whileHover={{ scale: 1.05 }}
+   593→                  whileTap={{ scale: 0.95 }}
+   594→                  onClick={() => handleRecentClick(tag)}
+   595→                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium transition-colors border border-emerald-200 dark:border-emerald-800"
+   596→                >
+   597→                  <TrendingUp className="size-3" />
+   598→                  {tag}
+   599→                </motion.button>
+   600→              ))}
+   601→            </div>
+   602→          </section>
+   603→
+   604→          {/* Search prompt */}
+   605→          <div className="flex flex-col items-center justify-center py-12 text-center">
+   606→            <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 p-6 mb-4">
+   607→              <Search className="size-10 text-emerald-600" />
+   608→            </div>
+   609→            <h3 className="font-semibold text-lg">Search for Notes</h3>
+   610→            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   611→              Type a keyword above to search across thousands of academic notes, summaries, and study materials.
+   612→            </p>
+   613→          </div>
+   614→        </motion.div>
+   615→      )}
+   616→
+   617→      {/* ── Search Results ─────────────────────────── */}
+   618→      {hasActiveQuery && (
+   619→        <>
+   620→          {/* Result count */}
+   621→          <motion.div
+   622→            initial={{ opacity: 0 }}
+   623→            animate={{ opacity: 1 }}
+   624→            className="flex items-center justify-between"
+   625→          >
+   626→            <div className="text-sm text-muted-foreground">
+   627→              {isLoading ? (
+   628→                <Skeleton className="h-4 w-32 inline-block" />
+   629→              ) : (
+   630→                <>
+   631→                  <span className="font-semibold text-foreground">{total}</span>
+   632→                  {' '}result{total !== 1 ? 's' : ''} for &quot;{debouncedQuery}&quot;
+   633→                </>
+   634→              )}
+   635→            </div>
+   636→          </motion.div>
+   637→
+   638→          {/* Results grid */}
+   639→          {isLoading ? (
+   640→            <NoteGridSkeleton />
+   641→          ) : isError ? (
+   642→            <motion.div
+   643→              initial={{ opacity: 0, y: 10 }}
+   644→              animate={{ opacity: 1, y: 0 }}
+   645→              className="flex flex-col items-center justify-center py-16 text-center"
+   646→            >
+   647→              <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+   648→                <FileText className="size-8 text-destructive" />
+   649→              </div>
+   650→              <h3 className="font-semibold">Search failed</h3>
+   651→              <p className="text-sm text-muted-foreground mt-1">Something went wrong. Please try again.</p>
+   652→              <Button variant="outline" size="sm" className="mt-4" onClick={() => queryClient.invalidateQueries({ queryKey: ['search'] })}>
+   653→                Retry
+   654→              </Button>
+   655→            </motion.div>
+   656→          ) : notes.length === 0 ? (
+   657→            <motion.div
+   658→              initial={{ opacity: 0, y: 10 }}
+   659→              animate={{ opacity: 1, y: 0 }}
+   660→              className="flex flex-col items-center justify-center py-16 text-center"
+   661→            >
+   662→              <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   663→                <Search className="size-8 text-muted-foreground" />
+   664→              </div>
+   665→              <h3 className="font-semibold">No results found</h3>
+   666→              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   667→                Try different keywords, remove some filters, or check your spelling.
+   668→              </p>
+   669→              {hasFilters && (
+   670→                <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={clearFilters}>
+   671→                  <X className="size-3.5" /> Clear Filters
+   672→                </Button>
+   673→              )}
+   674→            </motion.div>
+   675→          ) : (
+   676→            <motion.div
+   677→              variants={gridContainer}
+   678→              initial="hidden"
+   679→              animate="show"
+   680→              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+   681→            >
+   682→              <AnimatePresence mode="popLayout">
+   683→                {notes.map((note) => (
+   684→                  <motion.div key={note.id} variants={gridItem} layout>
+   685→                    <NoteCardItem
+   686→                      note={note}
+   687→                      onClick={() => navigate('note-detail', { id: note.id })}
+   688→                      onBookmark={(e) => handleBookmark(e, note)}
+   689→                    />
+   690→                  </motion.div>
+   691→                ))}
+   692→              </AnimatePresence>
+   693→            </motion.div>
+   694→          )}
+   695→
+   696→          {/* Pagination */}
+   697→          {totalPages > 1 && (
+   698→            <motion.div
+   699→              initial={{ opacity: 0 }}
+   700→              animate={{ opacity: 1 }}
+   701→              className="flex items-center justify-center gap-2 pt-2"
+   702→            >
+   703→              <Button
+   704→                variant="outline"
+   705→                size="sm"
+   706→                disabled={page <= 1}
+   707→                onClick={() => setPage((p) => Math.max(1, p - 1))}
+   708→                className="gap-1"
+   709→              >
+   710→                <ChevronLeft className="size-4" /> Previous
+   711→              </Button>
+   712→              <div className="flex items-center gap-1 px-2">
+   713→                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+   714→                  let pageNum: number;
+   715→                  if (totalPages <= 5) {
+   716→                    pageNum = i + 1;
+   717→                  } else if (page <= 3) {
+   718→                    pageNum = i + 1;
+   719→                  } else if (page >= totalPages - 2) {
+   720→                    pageNum = totalPages - 4 + i;
+   721→                  } else {
+   722→                    pageNum = page - 2 + i;
+   723→                  }
+   724→                  return (
+   725→                    <Button
+   726→                      key={pageNum}
+   727→                      variant={page === pageNum ? 'default' : 'ghost'}
+   728→                      size="sm"
+   729→                      className={`size-8 p-0 text-xs ${page === pageNum ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
+   730→                      onClick={() => setPage(pageNum)}
+   731→                    >
+   732→                      {pageNum}
+   733→                    </Button>
+   734→                  );
+   735→                })}
+   736→              </div>
+   737→              <Button
+   738→                variant="outline"
+   739→                size="sm"
+   740→                disabled={page >= totalPages}
+   741→                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+   742→                className="gap-1"
+   743→              >
+   744→                Next <ChevronRight className="size-4" />
+   745→              </Button>
+   746→            </motion.div>
+   747→          )}
+   748→        </>
+   749→      )}
+   750→    </div>
+   751→  );
+   752→}
+   753→

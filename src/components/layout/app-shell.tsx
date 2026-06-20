@@ -54,7 +54,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
 
 interface NavItem {
   title: string;

@@ -144,8 +144,11 @@ export async function POST(request: NextRequest) {
       data: { userId: user.id, action: 'upload', points: 10, noteId: note.id },
     });
 
-    // Trigger AI processing in background
-    fetch(`/api/ai/process?noteId=${note.id}`).catch(() => {});
+    // Set note status to active; AI processing can be triggered separately
+    await db.note.update({
+      where: { id: note.id },
+      data: { status: 'active' },
+    });
 
     return NextResponse.json({ success: true, note }, { status: 201 });
   } catch (error) {

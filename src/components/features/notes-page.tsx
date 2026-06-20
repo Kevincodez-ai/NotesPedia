@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import type { NoteCard, NoteFileType } from '@/types';
+import { formatRelativeTime, fileTypeIcon, fileTypeLabel, fileTypeColor } from '@/components/features/note-card';
 
 // ── Animation variants ──────────────────────────────────────────
 const gridContainer = {
@@ -43,35 +44,6 @@ const gridItem = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
-
-// ── Helpers ─────────────────────────────────────────────────────
-function formatRelativeTime(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function fileTypeIcon(type?: string | null) {
-  switch (type) {
-    case 'pdf': return '📕';
-    case 'docx': return '📘';
-    case 'pptx': return '📙';
-    case 'txt': return '📄';
-    case 'md': return '📝';
-    case 'image': return '🖼️';
-    default: return '📋';
-  }
-}
-
-function fileTypeLabel(type?: string | null) {
-  const labels: Record<string, string> = { pdf: 'PDF', docx: 'DOCX', pptx: 'PPTX', txt: 'TXT', md: 'MD', image: 'Image' };
-  return type ? labels[type] || type.toUpperCase() : 'FILE';
-}
 
 // ── Fetchers ────────────────────────────────────────────────────
 async function fetchNotes(params: Record<string, string>) {
@@ -104,13 +76,7 @@ function NoteCardItem({ note, onClick, onBookmark }: { note: NoteCard; onClick: 
     >
       <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
         {/* Color bar at top based on file type */}
-        <div className={`h-1 w-full ${
-          note.fileType === 'pdf' ? 'bg-red-400' :
-          note.fileType === 'docx' ? 'bg-blue-400' :
-          note.fileType === 'pptx' ? 'bg-orange-400' :
-          note.fileType === 'md' ? 'bg-purple-400' :
-          'bg-emerald-400'
-        }`} />
+        <div className={`h-1 w-full ${fileTypeColor(note.fileType)}`} />
         <CardContent className="p-4 space-y-3">
           <div className="flex items-start gap-3">
             <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
@@ -252,6 +218,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
 // ── Main Notes Page ─────────────────────────────────────────────
 export function NotesPage() {
   const { navigate } = useAppStore();
+  const queryClient = useQueryClient();
 
   // Filter state
   const [subjectId, setSubjectId] = useState<string>('_all');
@@ -281,6 +248,7 @@ export function NotesPage() {
   if (subjectId && subjectId !== '_all') queryParams.subjectId = subjectId;
   if (semester && semester !== '_all') queryParams.semester = semester;
   if (fileType && fileType !== '_all') queryParams.fileType = fileType;
+  if (searchQuery) queryParams.q = searchQuery;
 
   // Fetch notes
   const { data: notesData, isLoading, isError } = useQuery({
@@ -305,10 +273,13 @@ export function NotesPage() {
           body: JSON.stringify({ noteId: note.id }),
         });
       }
+      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     } catch {
       // Silently fail
     }
-  }, []);
+  }, [queryClient]);
 
   const clearFilters = () => {
     setSubjectId('_all');
@@ -354,6 +325,28 @@ export function NotesPage() {
                   <X className="size-3" /> Clear all
                 </Button>
               )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+              {/* Search */}
+              <div className="col-span-2 sm:col-span-4">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search notes..."
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                    className="h-9 text-xs pl-8"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => { setSearchQuery(''); setPage(1); }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                    >
+                      <X className="size-3.5 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {/* Subject */}

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
 import type { AuthUser } from '@/types';
 
 export function LoginPage() {
@@ -111,7 +112,9 @@ export function LoginPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Password</Label>
-                    <button type="button" className="text-xs font-medium text-primary hover:underline">
+                    <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => {
+                      toast.info('Password reset functionality coming soon');
+                    }}>
                       Forgot password?
                     </button>
                   </div>

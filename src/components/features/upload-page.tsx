@@ -107,7 +107,6 @@ export function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Upload state
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState<'idle' | 'uploading' | 'creating' | 'success' | 'error'>('idle');
   const [createdNoteId, setCreatedNoteId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -193,7 +192,6 @@ export function UploadPage() {
     if (!file || !title.trim()) return;
 
     setUploadStage('uploading');
-    setUploadProgress(0);
     setErrorMessage('');
 
     try {
@@ -211,7 +209,6 @@ export function UploadPage() {
         throw new Error(errData.error || 'Upload failed');
       }
 
-      setUploadProgress(60);
       setUploadStage('creating');
 
       const uploadData = await uploadRes.json();
@@ -241,7 +238,6 @@ export function UploadPage() {
       }
 
       const noteData = await noteRes.json();
-      setUploadProgress(100);
       setCreatedNoteId(noteData.note.id);
       setUploadStage('success');
     } catch (err) {
@@ -311,7 +307,6 @@ export function UploadPage() {
               setSemester('');
               setTags([]);
               setCreatedNoteId(null);
-              setUploadProgress(0);
               if (fileInputRef.current) fileInputRef.current.value = '';
             }}>
               Upload Another
@@ -354,7 +349,11 @@ export function UploadPage() {
                       {uploadStage === 'creating' && 'Creating note record...'}
                       {uploadStage === 'error' && 'Upload failed'}
                     </p>
-                    {uploadStage !== 'error' && <Progress value={uploadProgress} className="mt-2 h-2" />}
+                    {uploadStage !== 'error' && (
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+                      </div>
+                    )}
                   </div>
                 </div>
                 {uploadStage === 'error' && errorMessage && (

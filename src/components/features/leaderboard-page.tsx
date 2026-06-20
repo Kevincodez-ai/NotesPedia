@@ -8,7 +8,6 @@ import {
   Trophy,
   Medal,
   Crown,
-  ArrowUp,
   Upload,
   Star,
   TrendingUp,
@@ -275,6 +274,7 @@ export function LeaderboardPage() {
     type: 'reputation',
   };
   if (collegeId && collegeId !== '_all') queryParams.collegeId = collegeId;
+  if (timePeriod && timePeriod !== 'all') queryParams.timePeriod = timePeriod;
 
   const { data: leaderboardData, isLoading, isError } = useQuery({
     queryKey: ['leaderboard', queryParams],

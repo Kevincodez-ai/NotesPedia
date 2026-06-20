@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { NoteCard } from '@/types';
+import { formatRelativeTime, fileTypeIcon } from '@/components/features/note-card';
 
 // ── Animation variants ──────────────────────────────────────────
 const container = {
@@ -35,7 +36,8 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
 };
 
-// ── Helper ──────────────────────────────────────────────────────
+// ── Fetchers ────────────────────────────────────────────────────
+
 function formatDate() {
   return new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -45,39 +47,9 @@ function formatDate() {
   });
 }
 
-function formatRelativeTime(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function fileTypeIcon(type?: string | null) {
-  switch (type) {
-    case 'pdf': return '📕';
-    case 'docx': return '📘';
-    case 'pptx': return '📙';
-    case 'txt': return '📄';
-    case 'md': return '📝';
-    case 'image': return '🖼️';
-    default: return '📋';
-  }
-}
-
-// ── Fetchers ────────────────────────────────────────────────────
 async function fetchNotes(params: string) {
   const res = await fetch(`/api/notes?${params}`);
   if (!res.ok) throw new Error('Failed to fetch notes');
-  return res.json();
-}
-
-async function fetchUserStats() {
-  const res = await fetch('/api/auth');
-  if (!res.ok) throw new Error('Failed to fetch user');
   return res.json();
 }
 
@@ -242,8 +214,8 @@ export function DashboardPage() {
   const bookmarksCount = bookmarksData?.total ?? 0;
   const totalNotes = trendingData?.total ?? 0;
 
-  // Derive a reputation score (from user profile would be better, use placeholder)
-  const reputationScore = user ? 42 : 0;
+  // Use reputation from user data in the store
+  const reputationScore = user ? (user as Record<string, unknown>).reputationScore as number ?? 0 : 0;
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">

@@ -85,6 +85,8 @@ export interface NoteCard {
   tags: string[];
   createdAt: string;
   status: NoteStatus;
+  isBookmarked?: boolean;
+  userRating?: number | null;
 }
 
 export interface NoteDetail extends NoteCard {
@@ -102,6 +104,7 @@ export interface NoteDetail extends NoteCard {
   comments: CommentData[];
   isBookmarked?: boolean;
   userRating?: number;
+  versions: { id: string; version: number; changeLog?: string; createdAt: string }[];
 }
 
 export interface AISummaryData {

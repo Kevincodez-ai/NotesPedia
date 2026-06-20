@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getAuthUser } from '@/lib/auth';
 
 // GET - User profile with all details
 export async function GET(
@@ -8,13 +9,15 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const currentUser = await getAuthUser();
+    const isOwnProfile = currentUser?.id === id;
 
     const user = await db.user.findUnique({
       where: { id },
       select: {
         id: true,
         name: true,
-        email: true,
+        email: isOwnProfile, // Only include email for own profile
         avatarUrl: true,
         bio: true,
         role: true,
@@ -45,10 +48,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    // Get recent notes
+    // Get recent notes with uploader and viewCount
     const recentNotes = await db.note.findMany({
       where: { uploaderId: id, status: 'active' },
       include: {
+        uploader: { select: { id: true, name: true, avatarUrl: true } },
         subject: { select: { id: true, name: true } },
         college: { select: { id: true, name: true } },
         tags: { select: { tag: true } },
@@ -69,10 +73,23 @@ export async function GET(
       _avg: { value: true },
     });
 
+    // Check if current user follows this profile
+    let isFollowing = false;
+    if (currentUser && currentUser.id !== id) {
+      const followRecord = await db.follow.findFirst({
+        where: {
+          followerId: currentUser.id,
+          followingId: id,
+          type: 'user',
+        },
+      });
+      isFollowing = !!followRecord;
+    }
+
     const formattedProfile = {
       id: user.id,
       name: user.name,
-      email: user.email,
+      ...(isOwnProfile ? { email: user.email } : {}),
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       role: user.role,
@@ -111,6 +128,8 @@ export async function GET(
         title: n.title,
         description: n.description,
         fileType: n.fileType,
+        uploader: n.uploader,
+        viewCount: n.viewCount,
         subject: n.subject,
         college: n.college,
         downloadCount: n.downloadCount,
@@ -119,13 +138,8 @@ export async function GET(
         tags: n.tags.map((t) => t.tag),
         createdAt: n.createdAt.toISOString(),
       })),
+      isFollowing,
     };
-
-    // Check if current user follows this profile
-    const currentUser = await db.user.findFirst({
-      where: { id },
-    });
-    void currentUser; // Suppress unused variable warning
 
     return NextResponse.json({
       success: true,

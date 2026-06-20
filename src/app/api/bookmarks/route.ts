@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Add bookmark
+// POST - Add bookmark or manage folders
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser();
@@ -89,6 +89,47 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const { action } = body;
+
+    // Handle folder creation
+    if (action === 'createFolder') {
+      const { name, color, icon } = body;
+      if (!name?.trim()) {
+        return NextResponse.json({ success: false, error: 'Folder name is required' }, { status: 400 });
+      }
+
+      const folder = await db.bookmarkFolder.create({
+        data: {
+          name: name.trim(),
+          color: color || null,
+          icon: icon || null,
+          userId: user.id,
+        },
+      });
+
+      return NextResponse.json({ success: true, folder }, { status: 201 });
+    }
+
+    // Handle folder deletion
+    if (action === 'deleteFolder') {
+      const { folderId } = body;
+      if (!folderId) {
+        return NextResponse.json({ success: false, error: 'folderId is required' }, { status: 400 });
+      }
+
+      const folder = await db.bookmarkFolder.findFirst({
+        where: { id: folderId, userId: user.id },
+      });
+      if (!folder) {
+        return NextResponse.json({ success: false, error: 'Folder not found' }, { status: 404 });
+      }
+
+      await db.bookmarkFolder.delete({ where: { id: folderId } });
+
+      return NextResponse.json({ success: true, message: 'Folder deleted' });
+    }
+
+    // Default: bookmark toggle behavior
     const { noteId, folderId } = body;
 
     if (!noteId) {

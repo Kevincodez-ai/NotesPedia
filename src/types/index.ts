@@ -49,6 +49,8 @@ export type PageName =
   | 'search'
   | 'admin'
   | 'settings'
+  | 'forgot-password'
+  | 'reset-password'
   | 'features'
   | 'pricing'
   | 'college'

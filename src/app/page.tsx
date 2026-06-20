@@ -16,6 +16,8 @@ import { SearchPage } from '@/components/features/search-page';
 import { AdminPage } from '@/components/features/admin-page';
 import { SettingsPage } from '@/components/features/settings-page';
 import { ProfilePage } from '@/components/features/profile-page';
+import { ForgotPasswordPage } from '@/components/features/forgot-password-page';
+import { ResetPasswordPage } from '@/components/features/reset-password-page';
 import { AppShell } from '@/components/layout/app-shell';
 import { CommandPalette } from '@/components/layout/command-palette';
 
@@ -51,6 +53,8 @@ export default function Home() {
     if (currentPage === 'landing' && !isAuthenticated) return <LandingPage />;
     if (currentPage === 'login') return <LoginPage />;
     if (currentPage === 'signup') return <SignupPage />;
+    if (currentPage === 'forgot-password') return <ForgotPasswordPage />;
+    if (currentPage === 'reset-password') return <ResetPasswordPage />;
 
     // If not authenticated, show landing
     if (!isAuthenticated) return <LandingPage />;
@@ -95,7 +99,7 @@ export default function Home() {
     }
   };
 
-  const needsShell = isAuthenticated && !['landing', 'login', 'signup'].includes(currentPage);
+  const needsShell = isAuthenticated && !['landing', 'login', 'signup', 'forgot-password', 'reset-password'].includes(currentPage);
 
   return (
     <>

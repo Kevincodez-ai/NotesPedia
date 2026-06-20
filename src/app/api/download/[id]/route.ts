@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { getSupabaseAdmin, isStorageConfigured, STORAGE_BUCKET } from '@/lib/supabase';
 
 export async function GET(
   request: NextRequest,
@@ -21,6 +22,7 @@ export async function GET(
         id: true,
         title: true,
         filePath: true,
+        storageKey: true,
         fileType: true,
         extractedText: true,
         status: true,
@@ -62,6 +64,21 @@ export async function GET(
         });
       } catch {
         // Uploader may not have a profile yet
+      }
+    }
+
+    // Try Supabase Storage first (if configured and note has storageKey)
+    if (note.storageKey && isStorageConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .createSignedUrl(note.storageKey, 3600); // 1 hour expiry
+
+        if (!signedUrlError && signedUrlData?.signedUrl) {
+          // Redirect to the signed URL
+          return NextResponse.redirect(signedUrlData.signedUrl);
+        }
       }
     }
 

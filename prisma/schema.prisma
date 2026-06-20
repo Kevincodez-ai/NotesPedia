@@ -8,6 +8,17 @@ datasource db {
 }
 
 // ============================================================
+// PRODUCTION MIGRATION NOTE
+// ============================================================
+// To switch to Supabase PostgreSQL for production:
+// 1. Change provider above to "postgresql"
+// 2. Set DATABASE_URL in .env to your Supabase connection string:
+//    postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
+// 3. Run: bun run db:push
+// 4. Run: bun run db:generate
+// ============================================================
+
+// ============================================================
 // AUTH & USERS
 // ============================================================
 
@@ -19,12 +30,14 @@ model User {
   avatarUrl     String?
   bio           String?
   role          String   @default("student") // guest, student, verified_student, contributor, moderator, admin, super_admin
-  emailVerified Boolean  @default(false)
-  isActive      Boolean  @default(true)
-  provider      String   @default("email") // email, google, github
-  providerId    String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  emailVerified           Boolean  @default(false)
+  emailVerificationToken  String?
+  emailVerificationExpires DateTime?
+  isActive                Boolean  @default(true)
+  provider                String   @default("email") // email, google, github
+  providerId              String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   profile       Profile?
   notes         Note[]
@@ -170,6 +183,7 @@ model Note {
   title         String
   description   String?
   filePath      String?
+  storageKey    String?  // Supabase Storage object key (replaces filePath for cloud storage)
   fileType      String?  // pdf, docx, pptx, txt, md, image
   fileSize      Int?
   thumbnailUrl  String?

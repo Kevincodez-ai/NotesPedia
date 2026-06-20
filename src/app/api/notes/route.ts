@@ -12,6 +12,7 @@ const createNoteSchema = z.object({
   semester: z.number().int().min(1).max(12).optional(),
   tags: z.array(z.string().max(50, 'Tag too long')).max(10, 'Maximum 10 tags').optional(),
   filePath: z.string().max(500).optional(),
+  storageKey: z.string().max(500).optional(),
   fileType: z.string().max(20).optional(),
   fileSize: z.number().int().positive().optional(),
   extractedText: z.string().max(100000).optional(),
@@ -129,13 +130,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createNoteSchema.parse(body);
 
-    const { title, description, subjectId, collegeId, departmentId, semester, tags, filePath, fileType, fileSize, extractedText, previewText } = data;
+    const { title, description, subjectId, collegeId, departmentId, semester, tags, filePath, storageKey, fileType, fileSize, extractedText, previewText } = data;
 
     const note = await db.note.create({
       data: {
         title: title.trim(),
         description: description?.trim() || null,
         filePath: filePath || null,
+        storageKey: storageKey || null,
         fileType: fileType || null,
         fileSize: fileSize || null,
         extractedText: extractedText || null,

@@ -49,6 +49,22 @@ export async function POST(request: NextRequest) {
       const token = generateToken(user.id);
       await setAuthCookie(token);
 
+      // Send verification email (if email is configured)
+      try {
+        const verificationToken = generateToken(user.id); // reuse JWT token for simplicity
+        await db.user.update({
+          where: { id: user.id },
+          data: {
+            emailVerificationToken: verificationToken,
+            emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+          },
+        });
+        const { sendVerificationEmail } = await import('@/lib/email');
+        await sendVerificationEmail(data.email, verificationToken, user.name);
+      } catch {
+        // Email sending failed - account still works, just not verified
+      }
+
       return NextResponse.json({
         success: true,
         user: {

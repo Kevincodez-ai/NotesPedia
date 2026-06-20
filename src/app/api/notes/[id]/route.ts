@@ -215,6 +215,7 @@ export async function GET(
       description: note.description,
       fileType: note.fileType,
       fileSize: note.fileSize,
+      storageKey: note.storageKey,
       thumbnailUrl: note.thumbnailUrl,
       previewText: note.previewText,
       extractedText: (note.uploaderId === user?.id || ['admin', 'super_admin', 'moderator'].includes(user?.role || '')) ? note.extractedText : null,

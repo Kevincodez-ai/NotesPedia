@@ -1,0 +1,913 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useCallback } from 'react';
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/store/app-store';
+     6→import { motion, AnimatePresence } from 'framer-motion';
+     7→import {
+     8→  ArrowLeft,
+     9→  Download,
+    10→  Bookmark,
+    11→  BookmarkCheck,
+    12→  Star,
+    13→  Eye,
+    14→  Share2,
+    15→  Calendar,
+    16→  BookOpen,
+    17→  Sparkles,
+    18→  Brain,
+    19→  HelpCircle,
+    20→  MessageSquare,
+    21→  History,
+    22→  ChevronLeft,
+    23→  ChevronRight,
+    24→  RotateCcw,
+    25→  Send,
+    26→  Clock,
+    27→  Tag,
+    28→  GraduationCap,
+    29→  Building2,
+    30→  Lightbulb,
+    31→  CheckCircle2,
+    32→  XCircle,
+    33→  Trophy,
+    34→  FileText,
+    35→} from 'lucide-react';
+    36→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    37→import { Button } from '@/components/ui/button';
+    38→import { Badge } from '@/components/ui/badge';
+    39→import { Skeleton } from '@/components/ui/skeleton';
+    40→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    41→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    42→import { Textarea } from '@/components/ui/textarea';
+    43→import { Progress } from '@/components/ui/progress';
+    44→import { Separator } from '@/components/ui/separator';
+    45→import { ScrollArea } from '@/components/ui/scroll-area';
+    46→import type { NoteDetail, CommentData, FlashcardData, MCQData } from '@/types';
+    47→import { toast } from 'sonner';
+    48→import { formatRelativeTime as formatRelativeTimeBase } from '@/components/features/note-card';
+    49→
+    50→// ── Animation variants ──────────────────────────────────────────
+    51→const fadeIn = {
+    52→  hidden: { opacity: 0, y: 12 },
+    53→  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    54→};
+    55→
+    56→// ── Helpers ─────────────────────────────────────────────────────
+    57→function formatDate(dateStr: string) {
+    58→  return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    59→}
+    60→
+    61→const formatRelativeTime = formatRelativeTimeBase;
+    62→
+    63→function formatFileSize(bytes?: number | null) {
+    64→  if (!bytes) return '';
+    65→  if (bytes < 1024) return `${bytes} B`;
+    66→  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    67→  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    68→}
+    69→
+    70→// ── Fetchers ────────────────────────────────────────────────────
+    71→async function fetchNote(noteId: string) {
+    72→  const res = await fetch(`/api/notes/${noteId}`);
+    73→  if (!res.ok) throw new Error('Failed to fetch note');
+    74→  return res.json();
+    75→}
+    76→
+    77→// ── Rating Stars ────────────────────────────────────────────────
+    78→function RatingWidget({ noteId, currentRating, avgRating, ratingCount }: { noteId: string; currentRating: number | null; avgRating: number; ratingCount: number }) {
+    79→  const queryClient = useQueryClient();
+    80→  const [hoverRating, setHoverRating] = useState(0);
+    81→  const [userRating, setUserRating] = useState(currentRating);
+    82→
+    83→  const rateMutation = useMutation({
+    84→    mutationFn: async (value: number) => {
+    85→      const res = await fetch('/api/ratings', {
+    86→        method: 'POST',
+    87→        headers: { 'Content-Type': 'application/json' },
+    88→        body: JSON.stringify({ noteId, value }),
+    89→      });
+    90→      if (!res.ok) throw new Error('Failed to rate');
+    91→      return res.json();
+    92→    },
+    93→    onSuccess: (_, value) => {
+    94→      setUserRating(value);
+    95→      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+    96→    },
+    97→  });
+    98→
+    99→  return (
+   100→    <div className="flex items-center gap-3">
+   101→      <div className="flex items-center gap-0.5">
+   102→        {[1, 2, 3, 4, 5].map((star) => (
+   103→          <button
+   104→            key={star}
+   105→            type="button"
+   106→            aria-label={`Rate ${star} stars`}
+   107→            className="p-0.5 hover:scale-125 transition-transform"
+   108→            onMouseEnter={() => setHoverRating(star)}
+   109→            onMouseLeave={() => setHoverRating(0)}
+   110→            onClick={() => rateMutation.mutate(star)}
+   111→          >
+   112→            <Star
+   113→              className={`size-5 ${
+   114→                (hoverRating || userRating) >= star
+   115→                  ? 'fill-amber-400 text-amber-400'
+   116→                  : 'text-muted-foreground/40'
+   117→              }`}
+   118→            />
+   119→          </button>
+   120→        ))}
+   121→      </div>
+   122→      <span className="text-sm text-muted-foreground">
+   123→        {avgRating > 0 ? avgRating.toFixed(1) : 'No ratings'} {ratingCount > 0 && `(${ratingCount})`}
+   124→      </span>
+   125→    </div>
+   126→  );
+   127→}
+   128→
+   129→// ── Flashcard Deck ──────────────────────────────────────────────
+   130→function FlashcardDeck({ flashcards }: { flashcards: FlashcardData[] }) {
+   131→  const [currentIndex, setCurrentIndex] = useState(0);
+   132→  const [flipped, setFlipped] = useState(false);
+   133→
+   134→  if (flashcards.length === 0) {
+   135→    return (
+   136→      <div className="flex flex-col items-center justify-center py-12 text-center">
+   137→        <div className="rounded-2xl bg-muted/60 p-4 mb-4"><Brain className="size-8 text-muted-foreground" /></div>
+   138→        <h3 className="font-semibold">No flashcards yet</h3>
+   139→        <p className="text-sm text-muted-foreground mt-1">AI-generated flashcards will appear here after processing.</p>
+   140→      </div>
+   141→    );
+   142→  }
+   143→
+   144→  const card = flashcards[currentIndex];
+   145→
+   146→  return (
+   147→    <div className="space-y-4">
+   148→      <div className="flex items-center justify-between">
+   149→        <span className="text-sm text-muted-foreground">Card {currentIndex + 1} of {flashcards.length}</span>
+   150→        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => { setFlipped(false); setCurrentIndex(0); }}>
+   151→          <RotateCcw className="size-3" /> Restart
+   152→        </Button>
+   153→      </div>
+   154→
+   155→      <motion.div
+   156→        className="min-h-[220px] cursor-pointer perspective-1000"
+   157→        onClick={() => setFlipped(!flipped)}
+   158→        whileTap={{ scale: 0.98 }}
+   159→      >
+   160→        <AnimatePresence mode="wait">
+   161→          <motion.div
+   162→            key={`${currentIndex}-${flipped}`}
+   163→            initial={{ rotateY: flipped ? -90 : 90, opacity: 0 }}
+   164→            animate={{ rotateY: 0, opacity: 1 }}
+   165→            exit={{ rotateY: flipped ? 90 : -90, opacity: 0 }}
+   166→            transition={{ duration: 0.3 }}
+   167→          >
+   168→            <Card className={`border-2 ${flipped ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30' : 'border-primary/20 bg-card'}`}>
+   169→              <CardContent className="p-6 md:p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
+   170→                <div className="mb-3">
+   171→                  {flipped ? (
+   172→                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 mb-2">
+   173→                      Answer
+   174→                    </Badge>
+   175→                  ) : (
+   176→                    <Badge variant="outline" className="mb-2">Question</Badge>
+   177→                  )}
+   178→                </div>
+   179→                <p className="text-base md:text-lg leading-relaxed font-medium">
+   180→                  {flipped ? card.answer : card.question}
+   181→                </p>
+   182→                {!flipped && (
+   183→                  <p className="text-xs text-muted-foreground mt-4">Click to reveal answer</p>
+   184→                )}
+   185→              </CardContent>
+   186→            </Card>
+   187→          </motion.div>
+   188→        </AnimatePresence>
+   189→      </motion.div>
+   190→
+   191→      <div className="flex items-center justify-center gap-4">
+   192→        <Button
+   193→          variant="outline"
+   194→          size="sm"
+   195→          disabled={currentIndex === 0}
+   196→          onClick={() => { setFlipped(false); setCurrentIndex((i) => i - 1); }}
+   197→          className="gap-1"
+   198→        >
+   199→          <ChevronLeft className="size-4" /> Previous
+   200→        </Button>
+   201→        <Progress value={((currentIndex + 1) / flashcards.length) * 100} className="flex-1 max-w-32 h-2" />
+   202→        <Button
+   203→          variant="outline"
+   204→          size="sm"
+   205→          disabled={currentIndex === flashcards.length - 1}
+   206→          onClick={() => { setFlipped(false); setCurrentIndex((i) => i + 1); }}
+   207→          className="gap-1"
+   208→        >
+   209→          Next <ChevronRight className="size-4" />
+   210→        </Button>
+   211→      </div>
+   212→    </div>
+   213→  );
+   214→}
+   215→
+   216→// ── MCQ Quiz ────────────────────────────────────────────────────
+   217→function MCQQuiz({ mcqs }: { mcqs: MCQData[] }) {
+   218→  const [currentIndex, setCurrentIndex] = useState(0);
+   219→  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+   220→  const [showResult, setShowResult] = useState(false);
+   221→  const [score, setScore] = useState(0);
+   222→  const [answered, setAnswered] = useState(0);
+   223→  const [quizComplete, setQuizComplete] = useState(false);
+   224→
+   225→  if (mcqs.length === 0) {
+   226→    return (
+   227→      <div className="flex flex-col items-center justify-center py-12 text-center">
+   228→        <div className="rounded-2xl bg-muted/60 p-4 mb-4"><HelpCircle className="size-8 text-muted-foreground" /></div>
+   229→        <h3 className="font-semibold">No quiz questions yet</h3>
+   230→        <p className="text-sm text-muted-foreground mt-1">AI-generated MCQs will appear here after processing.</p>
+   231→      </div>
+   232→    );
+   233→  }
+   234→
+   235→  if (quizComplete) {
+   236→    const percentage = Math.round((score / mcqs.length) * 100);
+   237→    return (
+   238→      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8 space-y-4">
+   239→        <div className="rounded-full bg-emerald-100 dark:bg-emerald-900/30 p-4 inline-flex">
+   240→          <Trophy className="size-10 text-emerald-600" />
+   241→        </div>
+   242→        <h3 className="text-xl font-bold">Quiz Complete!</h3>
+   243→        <p className="text-muted-foreground">You scored <span className="font-bold text-primary">{score}</span> out of <span className="font-bold">{mcqs.length}</span></p>
+   244→        <div className="max-w-48 mx-auto">
+   245→          <Progress value={percentage} className="h-3" />
+   246→          <p className="text-sm text-muted-foreground mt-1">{percentage}% correct</p>
+   247→        </div>
+   248→        <Button
+   249→          onClick={() => {
+   250→            setCurrentIndex(0);
+   251→            setSelectedAnswer(null);
+   252→            setShowResult(false);
+   253→            setScore(0);
+   254→            setAnswered(0);
+   255→            setQuizComplete(false);
+   256→          }}
+   257→          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+   258→        >
+   259→          <RotateCcw className="size-4" /> Try Again
+   260→        </Button>
+   261→      </motion.div>
+   262→    );
+   263→  }
+   264→
+   265→  const mcq = mcqs[currentIndex];
+   266→  const options = [
+   267→    { key: 'A', text: mcq.optionA },
+   268→    { key: 'B', text: mcq.optionB },
+   269→    { key: 'C', text: mcq.optionC },
+   270→    { key: 'D', text: mcq.optionD },
+   271→  ];
+   272→  const isCorrect = selectedAnswer === mcq.correctAnswer;
+   273→
+   274→  const handleSelect = (key: string) => {
+   275→    if (showResult) return;
+   276→    setSelectedAnswer(key);
+   277→    setShowResult(true);
+   278→    setAnswered((a) => a + 1);
+   279→    if (key === mcq.correctAnswer) setScore((s) => s + 1);
+   280→  };
+   281→
+   282→  const handleNext = () => {
+   283→    if (currentIndex === mcqs.length - 1) {
+   284→      setQuizComplete(true);
+   285→    } else {
+   286→      setCurrentIndex((i) => i + 1);
+   287→      setSelectedAnswer(null);
+   288→      setShowResult(false);
+   289→    }
+   290→  };
+   291→
+   292→  return (
+   293→    <div className="space-y-4">
+   294→      <div className="flex items-center justify-between">
+   295→        <span className="text-sm text-muted-foreground">Question {currentIndex + 1} of {mcqs.length}</span>
+   296→        <span className="text-sm font-medium text-primary">Score: {score}/{answered}</span>
+   297→      </div>
+   298→
+   299→      <Progress value={((currentIndex + 1) / mcqs.length) * 100} className="h-2" />
+   300→
+   301→      <Card className="border-0 shadow-sm">
+   302→        <CardContent className="p-5 md:p-6">
+   303→          <h3 className="font-semibold text-base leading-relaxed mb-5">{mcq.question}</h3>
+   304→          <div className="space-y-2.5">
+   305→            {options.map((opt) => {
+   306→              let optionClass = 'border-2 hover:border-primary/40 hover:bg-primary/5 cursor-pointer';
+   307→              if (showResult) {
+   308→                if (opt.key === mcq.correctAnswer) {
+   309→                  optionClass = 'border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30';
+   310→                } else if (opt.key === selectedAnswer && opt.key !== mcq.correctAnswer) {
+   311→                  optionClass = 'border-2 border-destructive bg-destructive/5';
+   312→                } else {
+   313→                  optionClass = 'border-2 border-muted opacity-50 cursor-not-allowed';
+   314→                }
+   315→              } else if (selectedAnswer === opt.key) {
+   316→                optionClass = 'border-2 border-primary bg-primary/5';
+   317→              }
+   318→
+   319→              return (
+   320→                <motion.button
+   321→                  key={opt.key}
+   322→                  type="button"
+   323→                  whileHover={!showResult ? { scale: 1.01 } : undefined}
+   324→                  whileTap={!showResult ? { scale: 0.99 } : undefined}
+   325→                  className={`w-full text-left rounded-xl px-4 py-3 transition-all ${optionClass}`}
+   326→                  onClick={() => handleSelect(opt.key)}
+   327→                >
+   328→                  <div className="flex items-center gap-3">
+   329→                    <span className={`size-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+   330→                      showResult && opt.key === mcq.correctAnswer
+   331→                        ? 'bg-emerald-500 text-white'
+   332→                        : showResult && opt.key === selectedAnswer
+   333→                          ? 'bg-destructive text-white'
+   334→                          : 'bg-muted text-muted-foreground'
+   335→                    }`}>
+   336→                      {showResult && opt.key === mcq.correctAnswer ? (
+   337→                        <CheckCircle2 className="size-4" />
+   338→                      ) : showResult && opt.key === selectedAnswer ? (
+   339→                        <XCircle className="size-4" />
+   340→                      ) : (
+   341→                        opt.key
+   342→                      )}
+   343→                    </span>
+   344→                    <span className="text-sm">{opt.text}</span>
+   345→                  </div>
+   346→                </motion.button>
+   347→              );
+   348→            })}
+   349→          </div>
+   350→
+   351→          {showResult && mcq.explanation && (
+   352→            <motion.div
+   353→              initial={{ opacity: 0, y: 8 }}
+   354→              animate={{ opacity: 1, y: 0 }}
+   355→              className="mt-4 p-3 rounded-lg bg-muted/50"
+   356→            >
+   357→              <p className="text-xs text-muted-foreground"><span className="font-medium">Explanation:</span> {mcq.explanation}</p>
+   358→            </motion.div>
+   359→          )}
+   360→        </CardContent>
+   361→      </Card>
+   362→
+   363→      {showResult && (
+   364→        <div className="flex justify-end">
+   365→          <Button onClick={handleNext} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+   366→            {currentIndex === mcqs.length - 1 ? 'See Results' : 'Next Question'} <ChevronRight className="size-4" />
+   367→          </Button>
+   368→        </div>
+   369→      )}
+   370→    </div>
+   371→  );
+   372→}
+   373→
+   374→// ── Comments Section ────────────────────────────────────────────
+   375→function CommentsSection({ noteId, comments: initialComments }: { noteId: string; comments: CommentData[] }) {
+   376→  const queryClient = useQueryClient();
+   377→  const [commentText, setCommentText] = useState('');
+   378→  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+   379→  const [replyText, setReplyText] = useState('');
+   380→
+   381→  const commentMutation = useMutation({
+   382→    mutationFn: async ({ content, parentId }: { content: string; parentId?: string }) => {
+   383→      const res = await fetch('/api/comments', {
+   384→        method: 'POST',
+   385→        headers: { 'Content-Type': 'application/json' },
+   386→        body: JSON.stringify({ noteId, content, parentId }),
+   387→      });
+   388→      if (!res.ok) throw new Error('Failed to comment');
+   389→      return res.json();
+   390→    },
+   391→    onSuccess: () => {
+   392→      setCommentText('');
+   393→      setReplyText('');
+   394→      setReplyingTo(null);
+   395→      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+   396→    },
+   397→  });
+   398→
+   399→  return (
+   400→    <div className="space-y-4">
+   401→      {/* Add comment form */}
+   402→      <Card className="border-0 shadow-sm">
+   403→        <CardContent className="p-4">
+   404→          <Textarea
+   405→            placeholder="Write a comment..."
+   406→            value={commentText}
+   407→            onChange={(e) => setCommentText(e.target.value)}
+   408→            className="min-h-[80px] resize-none border-0 bg-muted/30 focus-visible:ring-1"
+   409→          />
+   410→          <div className="flex justify-end mt-2">
+   411→            <Button
+   412→              size="sm"
+   413→              disabled={!commentText.trim() || commentMutation.isPending}
+   414→              onClick={() => commentMutation.mutate({ content: commentText })}
+   415→              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+   416→            >
+   417→              <Send className="size-3.5" /> {commentMutation.isPending ? 'Posting...' : 'Post Comment'}
+   418→            </Button>
+   419→          </div>
+   420→        </CardContent>
+   421→      </Card>
+   422→
+   423→      {/* Comments list */}
+   424→      {initialComments.length === 0 ? (
+   425→        <div className="flex flex-col items-center justify-center py-8 text-center">
+   426→          <MessageSquare className="size-8 text-muted-foreground mb-2" />
+   427→          <p className="text-sm text-muted-foreground">No comments yet. Be the first to comment!</p>
+   428→        </div>
+   429→      ) : (
+   430→        <div className="space-y-3">
+   431→          {initialComments.map((comment) => (
+   432→            <CommentItem
+   433→              key={comment.id}
+   434→              comment={comment}
+   435→              noteId={noteId}
+   436→              replyingTo={replyingTo}
+   437→              setReplyingTo={setReplyingTo}
+   438→              replyText={replyText}
+   439→              setReplyText={setReplyText}
+   440→              commentMutation={commentMutation}
+   441→            />
+   442→          ))}
+   443→        </div>
+   444→      )}
+   445→    </div>
+   446→  );
+   447→}
+   448→
+   449→function CommentItem({
+   450→  comment,
+   451→  noteId,
+   452→  replyingTo,
+   453→  setReplyingTo,
+   454→  replyText,
+   455→  setReplyText,
+   456→  commentMutation,
+   457→}: {
+   458→  comment: CommentData;
+   459→  noteId: string;
+   460→  replyingTo: string | null;
+   461→  setReplyingTo: (id: string | null) => void;
+   462→  replyText: string;
+   463→  setReplyText: (text: string) => void;
+   464→  commentMutation: ReturnType<typeof useMutation>;
+   465→}) {
+   466→  const isReplying = replyingTo === comment.id;
+   467→
+   468→  return (
+   469→    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+   470→      <Card className="border-0 shadow-sm">
+   471→        <CardContent className="p-4">
+   472→          <div className="flex items-start gap-3">
+   473→            <Avatar className="size-8 shrink-0">
+   474→              {comment.user.avatarUrl && <AvatarImage src={comment.user.avatarUrl} />}
+   475→              <AvatarFallback className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   476→                {comment.user.name.charAt(0)}
+   477→              </AvatarFallback>
+   478→            </Avatar>
+   479→            <div className="flex-1 min-w-0">
+   480→              <div className="flex items-center gap-2">
+   481→                <span className="text-sm font-medium">{comment.user.name}</span>
+   482→                <span className="text-[10px] text-muted-foreground">{formatRelativeTime(comment.createdAt)}</span>
+   483→                {comment.isEdited && <span className="text-[10px] text-muted-foreground">(edited)</span>}
+   484→              </div>
+   485→              <p className="text-sm text-foreground/90 mt-1 leading-relaxed">{comment.content}</p>
+   486→              <Button
+   487→                variant="ghost"
+   488→                size="sm"
+   489→                className="mt-1 h-6 text-[11px] text-muted-foreground gap-1 px-0"
+   490→                onClick={() => setReplyingTo(isReplying ? null : comment.id)}
+   491→              >
+   492→                <MessageSquare className="size-3" /> Reply
+   493→              </Button>
+   494→
+   495→              {/* Reply form */}
+   496→              {isReplying && (
+   497→                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-2 space-y-2">
+   498→                  <Textarea
+   499→                    placeholder="Write a reply..."
+   500→                    value={replyText}
+   501→                    onChange={(e) => setReplyText(e.target.value)}
+   502→                    className="min-h-[60px] resize-none text-sm"
+   503→                  />
+   504→                  <div className="flex gap-2">
+   505→                    <Button
+   506→                      size="sm"
+   507→                      disabled={!replyText.trim() || commentMutation.isPending}
+   508→                      onClick={() => commentMutation.mutate({ content: replyText, parentId: comment.id })}
+   509→                      className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white h-7 text-xs"
+   510→                    >
+   511→                      <Send className="size-3" /> Reply
+   512→                    </Button>
+   513→                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setReplyingTo(null); setReplyText(''); }}>Cancel</Button>
+   514→                  </div>
+   515→                </motion.div>
+   516→              )}
+   517→
+   518→              {/* Replies */}
+   519→              {comment.replies && comment.replies.length > 0 && (
+   520→                <div className="mt-3 pl-4 border-l-2 border-muted space-y-3">
+   521→                  {comment.replies.map((reply) => (
+   522→                    <div key={reply.id} className="flex items-start gap-2">
+   523→                      <Avatar className="size-6 shrink-0">
+   524→                        {reply.user.avatarUrl && <AvatarImage src={reply.user.avatarUrl} />}
+   525→                        <AvatarFallback className="text-[9px] bg-muted">
+   526→                          {reply.user.name.charAt(0)}
+   527→                        </AvatarFallback>
+   528→                      </Avatar>
+   529→                      <div className="min-w-0">
+   530→                        <div className="flex items-center gap-1.5">
+   531→                          <span className="text-xs font-medium">{reply.user.name}</span>
+   532→                          <span className="text-[10px] text-muted-foreground">{formatRelativeTime(reply.createdAt)}</span>
+   533→                        </div>
+   534→                        <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">{reply.content}</p>
+   535→                      </div>
+   536→                    </div>
+   537→                  ))}
+   538→                </div>
+   539→              )}
+   540→            </div>
+   541→          </div>
+   542→        </CardContent>
+   543→      </Card>
+   544→    </motion.div>
+   545→  );
+   546→}
+   547→
+   548→// ── AI Summary Section ──────────────────────────────────────────
+   549→function AISummarySection({ summary }: { summary: NonNullable<NoteDetail['aiSummary']> }) {
+   550→  return (
+   551→    <Card className="border-2 border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50/80 to-teal-50/80 dark:from-emerald-950/20 dark:to-teal-950/20">
+   552→      <CardHeader className="pb-3">
+   553→        <CardTitle className="flex items-center gap-2 text-base">
+   554→          <div className="rounded-lg bg-emerald-100 dark:bg-emerald-900/50 p-1.5">
+   555→            <Sparkles className="size-4 text-emerald-600" />
+   556→          </div>
+   557→          AI-Generated Summary
+   558→        </CardTitle>
+   559→      </CardHeader>
+   560→      <CardContent className="space-y-4">
+   561→        <p className="text-sm leading-relaxed">{summary.summary}</p>
+   562→
+   563→        {summary.keywords.length > 0 && (
+   564→          <div>
+   565→            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+   566→              <Tag className="size-3" /> Keywords
+   567→            </h4>
+   568→            <div className="flex flex-wrap gap-1.5">
+   569→              {summary.keywords.map((kw) => (
+   570→                <Badge key={kw} variant="secondary" className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{kw}</Badge>
+   571→              ))}
+   572→            </div>
+   573→          </div>
+   574→        )}
+   575→
+   576→        {summary.concepts.length > 0 && (
+   577→          <div>
+   578→            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+   579→              <Lightbulb className="size-3" /> Key Concepts
+   580→            </h4>
+   581→            <ul className="space-y-1">
+   582→              {summary.concepts.map((concept, i) => (
+   583→                <li key={i} className="text-sm flex items-start gap-2">
+   584→                  <span className="text-emerald-500 mt-1 shrink-0">•</span>
+   585→                  {concept}
+   586→                </li>
+   587→              ))}
+   588→            </ul>
+   589→          </div>
+   590→        )}
+   591→
+   592→        {summary.learningObjectives.length > 0 && (
+   593→          <div>
+   594→            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+   595→              <GraduationCap className="size-3" /> Learning Objectives
+   596→            </h4>
+   597→            <ul className="space-y-1">
+   598→              {summary.learningObjectives.map((obj, i) => (
+   599→                <li key={i} className="text-sm flex items-start gap-2">
+   600→                  <CheckCircle2 className="size-4 text-emerald-500 mt-0.5 shrink-0" />
+   601→                  {obj}
+   602→                </li>
+   603→              ))}
+   604→            </ul>
+   605→          </div>
+   606→        )}
+   607→
+   608→        {summary.importantQuestions.length > 0 && (
+   609→          <div>
+   610→            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+   611→              <HelpCircle className="size-3" /> Important Questions
+   612→            </h4>
+   613→            <ul className="space-y-1">
+   614→              {summary.importantQuestions.map((q, i) => (
+   615→                <li key={i} className="text-sm flex items-start gap-2 text-foreground/80">
+   616→                  <span className="text-amber-500 font-mono text-xs mt-0.5 shrink-0">Q{i + 1}.</span>
+   617→                  {q}
+   618→                </li>
+   619→              ))}
+   620→            </ul>
+   621→          </div>
+   622→        )}
+   623→      </CardContent>
+   624→    </Card>
+   625→  );
+   626→}
+   627→
+   628→// ── Detail Page Skeleton ────────────────────────────────────────
+   629→function DetailSkeleton() {
+   630→  return (
+   631→    <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+   632→      <Skeleton className="h-6 w-24" />
+   633→      <div className="space-y-3">
+   634→        <Skeleton className="h-8 w-3/4" />
+   635→        <div className="flex gap-3">
+   636→          <Skeleton className="h-5 w-32" />
+   637→          <Skeleton className="h-5 w-24" />
+   638→        </div>
+   639→      </div>
+   640→      <div className="flex gap-3">
+   641→        {Array.from({ length: 4 }).map((_, i) => (
+   642→          <Skeleton key={i} className="h-9 w-24 rounded-full" />
+   643→        ))}
+   644→      </div>
+   645→      <Skeleton className="h-40 w-full" />
+   646→      <Skeleton className="h-60 w-full" />
+   647→    </div>
+   648→  );
+   649→}
+   650→
+   651→// ── Main Note Detail Page ───────────────────────────────────────
+   652→export function NoteDetailPage({ noteId }: { noteId: string }) {
+   653→  const { navigate, user } = useAppStore();
+   654→  const queryClient = useQueryClient();
+   655→
+   656→  // Fetch note detail
+   657→  const { data, isLoading, isError } = useQuery({
+   658→    queryKey: ['note', noteId],
+   659→    queryFn: () => fetchNote(noteId),
+   660→  });
+   661→
+   662→  const note: NoteDetail | null = data?.note ?? null;
+   663→
+   664→  // Bookmark mutation
+   665→  const bookmarkMutation = useMutation({
+   666→    mutationFn: async (shouldBookmark: boolean) => {
+   667→      if (shouldBookmark) {
+   668→        const res = await fetch('/api/bookmarks', {
+   669→          method: 'POST',
+   670→          headers: { 'Content-Type': 'application/json' },
+   671→          body: JSON.stringify({ noteId }),
+   672→        });
+   673→        if (!res.ok) throw new Error('Failed');
+   674→        return res.json();
+   675→      } else {
+   676→        const res = await fetch(`/api/bookmarks?noteId=${noteId}`, { method: 'DELETE' });
+   677→        if (!res.ok) throw new Error('Failed');
+   678→        return res.json();
+   679→      }
+   680→    },
+   681→    onSuccess: () => {
+   682→      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+   683→    },
+   684→  });
+   685→
+   686→  if (isLoading) return <DetailSkeleton />;
+   687→
+   688→  if (isError || !note) {
+   689→    return (
+   690→      <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
+   691→        <div className="flex flex-col items-center justify-center py-20 text-center">
+   692→          <div className="rounded-2xl bg-destructive/10 p-4 mb-4"><FileText className="size-8 text-destructive" /></div>
+   693→          <h2 className="text-lg font-semibold">Note not found</h2>
+   694→          <p className="text-sm text-muted-foreground mt-1">This note may have been removed or doesn&apos;t exist.</p>
+   695→          <Button variant="outline" className="mt-4 gap-1.5" onClick={() => navigate('notes')}>
+   696→            <ArrowLeft className="size-4" /> Back to Notes
+   697→          </Button>
+   698→        </div>
+   699→      </div>
+   700→    );
+   701→  }
+   702→
+   703→  const isBookmarked = note.isBookmarked ?? false;
+   704→
+   705→  return (
+   706→    <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+   707→      {/* ── Back Button ──────────────────────────────── */}
+   708→      <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+   709→        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => navigate('notes')}>
+   710→          <ArrowLeft className="size-4" /> Back to Notes
+   711→        </Button>
+   712→      </motion.div>
+   713→
+   714→      {/* ── Header Section ───────────────────────────── */}
+   715→      <motion.div variants={fadeIn} initial="hidden" animate="show" className="space-y-4">
+   716→        <div className="flex flex-col gap-4">
+   717→          <div>
+   718→            <h1 className="text-2xl md:text-3xl font-bold tracking-tight leading-tight">{note.title}</h1>
+   719→            {note.description && (
+   720→              <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-2xl">{note.description}</p>
+   721→            )}
+   722→          </div>
+   723→
+   724→          {/* Uploader info & stats */}
+   725→          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+   726→            <div className="flex items-center gap-2">
+   727→              <Avatar className="size-8">
+   728→                {note.uploader.avatarUrl && <AvatarImage src={note.uploader.avatarUrl} />}
+   729→                <AvatarFallback className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   730→                  {note.uploader.name.charAt(0)}
+   731→                </AvatarFallback>
+   732→              </Avatar>
+   733→              <span className="text-sm font-medium">{note.uploader.name}</span>
+   734→            </div>
+   735→            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+   736→              <Calendar className="size-3" /> {formatDate(note.createdAt)}
+   737→            </span>
+   738→            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+   739→              <Eye className="size-3" /> {note.viewCount} views
+   740→            </span>
+   741→            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+   742→              <Download className="size-3" /> {note.downloadCount} downloads
+   743→            </span>
+   744→            {note.fileSize && (
+   745→              <span className="text-xs text-muted-foreground">{formatFileSize(note.fileSize)}</span>
+   746→            )}
+   747→          </div>
+   748→
+   749→          {/* Badges */}
+   750→          <div className="flex flex-wrap items-center gap-2">
+   751→            {note.subject && (
+   752→              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1">
+   753→                <BookOpen className="size-3" /> {note.subject.name}
+   754→              </Badge>
+   755→            )}
+   756→            {note.college && (
+   757→              <Badge variant="outline" className="gap-1">
+   758→                <Building2 className="size-3" /> {note.college.name}
+   759→              </Badge>
+   760→            )}
+   761→            {note.semester && (
+   762→              <Badge variant="outline">Semester {note.semester}</Badge>
+   763→            )}
+   764→            {note.fileType && (
+   765→              <Badge variant="secondary" className="font-mono uppercase">{note.fileType}</Badge>
+   766→            )}
+   767→            {note.status === 'processing' && (
+   768→              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800">
+   769→                ⏳ AI Processing
+   770→              </Badge>
+   771→            )}
+   772→          </div>
+   773→
+   774→          {/* Tags */}
+   775→          {note.tags.length > 0 && (
+   776→            <div className="flex flex-wrap gap-1.5">
+   777→              {note.tags.map((tag) => (
+   778→                <Badge key={tag} variant="secondary" className="text-xs font-normal">#{tag}</Badge>
+   779→              ))}
+   780→            </div>
+   781→          )}
+   782→        </div>
+   783→
+   784→        {/* Action Buttons */}
+   785→        <div className="flex flex-wrap items-center gap-2">
+   786→          <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" asChild>
+   787→            <a href={note.filePath || '#'} target="_blank" rel="noopener noreferrer">
+   788→              <Download className="size-4" /> Download
+   789→            </a>
+   790→          </Button>
+   791→          <Button
+   792→            variant="outline"
+   793→            className={`gap-2 ${isBookmarked ? 'border-emerald-300 text-emerald-600 dark:border-emerald-700 dark:text-emerald-400' : ''}`}
+   794→            onClick={() => bookmarkMutation.mutate(!isBookmarked)}
+   795→            disabled={bookmarkMutation.isPending}
+   796→          >
+   797→            {isBookmarked ? <BookmarkCheck className="size-4" /> : <Bookmark className="size-4" />}
+   798→            {isBookmarked ? 'Bookmarked' : 'Bookmark'}
+   799→          </Button>
+   800→          <Button variant="outline" className="gap-2" onClick={() => {
+   801→            const message = `Check out '${note.title}' on NotesPedia!`;
+   802→            navigator.clipboard.writeText(message).then(() => {
+   803→              toast.success('Link copied to clipboard!');
+   804→            }).catch(() => {
+   805→              toast.error('Failed to copy');
+   806→            });
+   807→          }}>
+   808→            <Share2 className="size-4" /> Share
+   809→          </Button>
+   810→        </div>
+   811→
+   812→        {/* Rating */}
+   813→        <div className="flex items-center gap-3">
+   814→          <span className="text-sm text-muted-foreground">Rate this note:</span>
+   815→          <RatingWidget noteId={noteId} currentRating={note.userRating} avgRating={note.avgRating} ratingCount={note.ratingCount} />
+   816→        </div>
+   817→      </motion.div>
+   818→
+   819→      <Separator />
+   820→
+   821→      {/* ── Tabbed Content ───────────────────────────── */}
+   822→      <motion.div variants={fadeIn} initial="hidden" animate="show">
+   823→        <Tabs defaultValue="overview" className="space-y-4">
+   824→          <TabsList className="h-auto flex-wrap gap-1 bg-muted/50 p-1">
+   825→            <TabsTrigger value="overview" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+   826→              <FileText className="size-3.5" /> Overview
+   827→            </TabsTrigger>
+   828→            <TabsTrigger value="flashcards" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+   829→              <Brain className="size-3.5" /> Flashcards {note.flashcards.length > 0 && `(${note.flashcards.length})`}
+   830→            </TabsTrigger>
+   831→            <TabsTrigger value="quiz" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+   832→              <HelpCircle className="size-3.5" /> MCQ Quiz {note.mcqs.length > 0 && `(${note.mcqs.length})`}
+   833→            </TabsTrigger>
+   834→            <TabsTrigger value="comments" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+   835→              <MessageSquare className="size-3.5" /> Comments {note.commentCount > 0 && `(${note.commentCount})`}
+   836→            </TabsTrigger>
+   837→            <TabsTrigger value="versions" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+   838→              <History className="size-3.5" /> Versions
+   839→            </TabsTrigger>
+   840→          </TabsList>
+   841→
+   842→          {/* Overview Tab */}
+   843→          <TabsContent value="overview" className="space-y-4">
+   844→            {/* AI Summary */}
+   845→            {note.aiSummary && <AISummarySection summary={note.aiSummary} />}
+   846→
+   847→            {/* Preview Text */}
+   848→            {note.previewText && (
+   849→              <Card className="border-0 shadow-sm">
+   850→                <CardHeader className="pb-2">
+   851→                  <CardTitle className="text-sm flex items-center gap-2">
+   852→                    <FileText className="size-4 text-muted-foreground" /> Preview
+   853→                  </CardTitle>
+   854→                </CardHeader>
+   855→                <CardContent>
+   856→                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap line-clamp-[20]">{note.previewText}</p>
+   857→                </CardContent>
+   858→              </Card>
+   859→            )}
+   860→
+   861→            {!note.aiSummary && !note.previewText && (
+   862→              <div className="flex flex-col items-center justify-center py-12 text-center">
+   863→                <div className="rounded-2xl bg-muted/60 p-4 mb-4"><Sparkles className="size-8 text-muted-foreground" /></div>
+   864→                <h3 className="font-semibold">AI Processing In Progress</h3>
+   865→                <p className="text-sm text-muted-foreground mt-1 max-w-md">
+   866→                  Our AI is analyzing this note to generate summaries, flashcards, and quiz questions. Check back soon!
+   867→                </p>
+   868→              </div>
+   869→            )}
+   870→          </TabsContent>
+   871→
+   872→          {/* Flashcards Tab */}
+   873→          <TabsContent value="flashcards">
+   874→            <FlashcardDeck flashcards={note.flashcards} />
+   875→          </TabsContent>
+   876→
+   877→          {/* MCQ Quiz Tab */}
+   878→          <TabsContent value="quiz">
+   879→            <MCQQuiz mcqs={note.mcqs} />
+   880→          </TabsContent>
+   881→
+   882→          {/* Comments Tab */}
+   883→          <TabsContent value="comments">
+   884→            <CommentsSection noteId={noteId} comments={note.comments} />
+   885→          </TabsContent>
+   886→
+   887→          {/* Versions Tab */}
+   888→          <TabsContent value="versions">
+   889→            <Card className="border-0 shadow-sm">
+   890→              <CardContent className="p-4">
+   891→                <div className="space-y-3">
+   892→                  <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/20">
+   893→                    <div className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 p-1.5">
+   894→                      <FileText className="size-4 text-emerald-600" />
+   895→                    </div>
+   896→                    <div>
+   897→                      <p className="text-sm font-medium">Version {note.version} (Current)</p>
+   898→                      <p className="text-xs text-muted-foreground">{formatDate(note.createdAt)}</p>
+   899→                    </div>
+   900→                  </div>
+   901→                  {(!note.versions || (note as Record<string, unknown>).versions === undefined) && note.version <= 1 && (
+   902→                    <p className="text-sm text-muted-foreground text-center py-4">This is the first version of this note.</p>
+   903→                  )}
+   904→                </div>
+   905→              </CardContent>
+   906→            </Card>
+   907→          </TabsContent>
+   908→        </Tabs>
+   909→      </motion.div>
+   910→    </div>
+   911→  );
+   912→}
+   913→

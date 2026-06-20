@@ -12,8 +12,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const folderId = searchParams.get('folderId');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '12');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '12') || 12));
 
     const where: Record<string, unknown> = { userId: user.id };
     if (folderId) where.folderId = folderId;

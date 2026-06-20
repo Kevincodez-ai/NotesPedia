@@ -33,6 +33,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Cannot rate your own note' }, { status: 400 });
     }
 
+    // Check if a rating already exists before upserting
+    const existingRating = await db.rating.findUnique({
+      where: { noteId_userId: { noteId, userId: user.id } },
+    });
+    const isNewRating = !existingRating;
+
     // Upsert rating
     const rating = await db.rating.upsert({
       where: { noteId_userId: { noteId, userId: user.id } },
@@ -55,8 +61,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Award reputation to note uploader if new rating
-    if (rating.createdAt === rating.updatedAt) {
+    // Award reputation to note uploader only on NEW ratings
+    if (isNewRating) {
       await db.profile.update({
         where: { userId: note.uploaderId },
         data: { reputationScore: { increment: 2 } },

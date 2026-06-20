@@ -10,14 +10,14 @@ export async function GET(request: NextRequest) {
     const departmentId = searchParams.get('departmentId');
     const collegeId = searchParams.get('collegeId');
     const semester = searchParams.get('semester');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '20') || 20));
 
     const where: Record<string, unknown> = {};
     if (q.trim()) where.name = { contains: q.trim() };
     if (departmentId) where.departmentId = departmentId;
     if (collegeId) where.collegeId = collegeId;
-    if (semester) where.semester = parseInt(semester);
+    if (semester) { const s = parseInt(semester); if (!isNaN(s)) where.semester = s; }
 
     const [subjects, total] = await Promise.all([
       db.subject.findMany({
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       data: {
         name: name.trim(),
         code: code?.trim() || null,
-        semester: semester ? parseInt(semester) : null,
+        semester: semester ? (() => { const s = parseInt(semester); return isNaN(s) ? null : s; })() : null,
         departmentId: departmentId || null,
         collegeId: collegeId || null,
         description: description?.trim() || null,

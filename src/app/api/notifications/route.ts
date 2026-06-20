@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '20') || 20));
     const type = searchParams.get('type');
     const unreadOnly = searchParams.get('unread') === 'true';
 
@@ -64,14 +64,14 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { notificationId, markAll } = body;
+    const { notificationId, markAllRead } = body;
 
-    if (markAll) {
-      await db.notification.updateMany({
+    if (markAllRead === true) {
+      const result = await db.notification.updateMany({
         where: { userId: user.id, isRead: false },
         data: { isRead: true },
       });
-      return NextResponse.json({ success: true, message: 'All notifications marked as read' });
+      return NextResponse.json({ success: true, message: 'All notifications marked as read', count: result.count });
     }
 
     if (!notificationId) {

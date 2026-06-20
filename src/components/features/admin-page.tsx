@@ -26,6 +26,10 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Pencil,
+  UserCog,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,7 +61,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import type { AdminStats, CollegeData } from '@/types';
 
@@ -102,17 +123,17 @@ async function fetchAdminColleges(params: string) {
   return res.json();
 }
 
-async function adminAction(endpoint: string, method: string, body?: unknown) {
-  const res = await fetch(endpoint, {
-    method,
+async function adminPostAction(body: Record<string, unknown>) {
+  const res = await fetch('/api/admin', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
+    body: JSON.stringify(body),
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Action failed');
   }
-  return res.json();
+  return data;
 }
 
 // ── Stat Card ───────────────────────────────────────────────────
@@ -213,7 +234,6 @@ function TableSkeleton({ cols = 5 }: { cols?: number }) {
 // ── Main Admin Page ─────────────────────────────────────────────
 export function AdminPage() {
   const { user } = useAppStore();
-  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('overview');
 
   // Gate access
@@ -261,7 +281,7 @@ export function AdminPage() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-6 space-y-6">
-          <OverviewTab />
+          <OverviewTab onTabChange={setActiveTab} />
         </TabsContent>
         <TabsContent value="users" className="mt-6">
           <UsersTab />
@@ -281,7 +301,7 @@ export function AdminPage() {
 }
 
 // ── Overview Tab ────────────────────────────────────────────────
-function OverviewTab() {
+function OverviewTab({ onTabChange }: { onTabChange: (tab: string) => void }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['admin-stats'],
     queryFn: fetchAdminStats,
@@ -335,19 +355,19 @@ function OverviewTab() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('users')}>
                 <Users className="size-5 text-emerald-600" />
                 <span className="text-xs">View Users</span>
               </Button>
-              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('reports')}>
                 <AlertTriangle className="size-5 text-orange-500" />
                 <span className="text-xs">Review Reports</span>
               </Button>
-              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('colleges')}>
                 <GraduationCap className="size-5 text-teal-600" />
                 <span className="text-xs">Add College</span>
               </Button>
-              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => {}}>
+              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('notes')}>
                 <FileText className="size-5 text-amber-500" />
                 <span className="text-xs">Flagged Notes</span>
               </Button>
@@ -407,6 +427,13 @@ function UsersTab() {
   const [page, setPage] = useState(1);
   const limit = 10;
 
+  // Role change dialog state
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<{
+    id: string; name: string; role: string;
+  } | null>(null);
+  const [newRole, setNewRole] = useState('');
+
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
@@ -427,15 +454,44 @@ function UsersTab() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
-  const actionMutation = useMutation({
-    mutationFn: ({ userId, action }: { userId: string; action: string }) =>
-      adminAction('/api/admin/users', 'PUT', { userId, action }),
-    onSuccess: (_, variables) => {
+  // Admin action mutation - POST /api/admin
+  const adminActionMutation = useMutation({
+    mutationFn: adminPostAction,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast.success(`User ${variables.action} successful`);
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const handleChangeRole = () => {
+    if (!selectedUser || !newRole) return;
+    adminActionMutation.mutate(
+      { action: 'updateUser', id: selectedUser.id, role: newRole },
+      {
+        onSuccess: () => {
+          toast.success(`Changed ${selectedUser.name}'s role to ${newRole.replace('_', ' ')}`);
+          setRoleDialogOpen(false);
+          setSelectedUser(null);
+          setNewRole('');
+        },
+      },
+    );
+  };
+
+  const handleSuspendUser = (userId: string, userName: string) => {
+    adminActionMutation.mutate(
+      { action: 'updateUser', id: userId, isActive: false },
+      { onSuccess: () => toast.success(`Suspended ${userName}`) },
+    );
+  };
+
+  const handleActivateUser = (userId: string, userName: string) => {
+    adminActionMutation.mutate(
+      { action: 'updateUser', id: userId, isActive: true },
+      { onSuccess: () => toast.success(`Activated ${userName}`) },
+    );
+  };
 
   const roleBadgeColor = (role: string) => {
     switch (role) {
@@ -529,37 +585,44 @@ function UsersTab() {
                   </TableCell>
                   <TableCell className="text-sm">{u._count?.notes ?? 0}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {!u.emailVerified && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
-                          onClick={() => actionMutation.mutate({ userId: u.id, action: 'verify' })}
-                          title="Verify user"
-                        >
-                          <CheckCircle2 className="size-3.5 text-emerald-600" />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="size-7">
+                          <MoreHorizontal className="size-3.5" />
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 hover:bg-amber-50 dark:hover:bg-amber-900/30"
-                        onClick={() => actionMutation.mutate({ userId: u.id, action: 'promote' })}
-                        title="Promote user"
-                      >
-                        <ArrowUpRight className="size-3.5 text-amber-600" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 hover:bg-destructive/10"
-                        onClick={() => actionMutation.mutate({ userId: u.id, action: u.isActive ? 'suspend' : 'unsuspend' })}
-                        title={u.isActive ? 'Suspend user' : 'Unsuspend user'}
-                      >
-                        <Ban className={`size-3.5 ${u.isActive ? 'text-destructive' : 'text-emerald-600'}`} />
-                      </Button>
-                    </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedUser({ id: u.id, name: u.name, role: u.role });
+                            setNewRole(u.role);
+                            setRoleDialogOpen(true);
+                          }}
+                        >
+                          <UserCog className="size-3.5 mr-2" />
+                          Change Role
+                        </DropdownMenuItem>
+                        {u.isActive ? (
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => handleSuspendUser(u.id, u.name)}
+                            disabled={adminActionMutation.isPending}
+                          >
+                            <Ban className="size-3.5 mr-2" />
+                            Suspend User
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            className="text-emerald-600 focus:text-emerald-600"
+                            onClick={() => handleActivateUser(u.id, u.name)}
+                            disabled={adminActionMutation.isPending}
+                          >
+                            <CheckCircle2 className="size-3.5 mr-2" />
+                            Activate User
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))}
@@ -582,6 +645,46 @@ function UsersTab() {
           </Button>
         </div>
       )}
+
+      {/* Change Role Dialog */}
+      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change User Role</DialogTitle>
+            <DialogDescription>
+              Change the role for {selectedUser?.name}. This will affect their permissions on the platform.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>New Role</Label>
+              <Select value={newRole} onValueChange={setNewRole}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="student">Student</SelectItem>
+                  <SelectItem value="verified_student">Verified Student</SelectItem>
+                  <SelectItem value="contributor">Contributor</SelectItem>
+                  <SelectItem value="moderator">Moderator</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRoleDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={!newRole || newRole === selectedUser?.role || adminActionMutation.isPending}
+              onClick={handleChangeRole}
+            >
+              {adminActionMutation.isPending ? 'Updating...' : 'Update Role'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -592,6 +695,11 @@ function NotesTab() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const limit = 10;
+
+  // Remove note dialog state
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [noteToRemove, setNoteToRemove] = useState<{ id: string; title: string } | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
 
   const params = new URLSearchParams({
     page: String(page),
@@ -614,15 +722,37 @@ function NotesTab() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
-  const noteActionMutation = useMutation({
-    mutationFn: ({ noteId, action }: { noteId: string; action: string }) =>
-      adminAction('/api/admin/notes', 'PUT', { noteId, action }),
-    onSuccess: (_, variables) => {
+  // Admin action mutation - POST /api/admin
+  const adminActionMutation = useMutation({
+    mutationFn: adminPostAction,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-notes'] });
-      toast.success(`Note ${variables.action} successful`);
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const handleRemoveNote = () => {
+    if (!noteToRemove || !removeReason.trim()) return;
+    adminActionMutation.mutate(
+      { action: 'removeNote', id: noteToRemove.id, reason: removeReason.trim() },
+      {
+        onSuccess: () => {
+          toast.success(`Note "${noteToRemove.title}" removed`);
+          setRemoveDialogOpen(false);
+          setNoteToRemove(null);
+          setRemoveReason('');
+        },
+      },
+    );
+  };
+
+  const handleFeatureNote = (noteId: string, noteTitle: string) => {
+    adminActionMutation.mutate(
+      { action: 'featureNote', id: noteId },
+      { onSuccess: () => toast.success(`Note "${noteTitle}" featured`) },
+    );
+  };
 
   const statusBadge = (status: string) => {
     switch (status) {
@@ -720,35 +850,33 @@ function NotesTab() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {n.status !== 'flagged' && (
+                      {n.status !== 'removed' && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 hover:bg-orange-50 dark:hover:bg-orange-900/30"
-                          onClick={() => noteActionMutation.mutate({ noteId: n.id, action: 'flag' })}
-                          title="Flag note"
+                          className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                          onClick={() => handleFeatureNote(n.id, n.title)}
+                          disabled={adminActionMutation.isPending}
+                          title="Feature note"
                         >
-                          <Flag className="size-3.5 text-orange-500" />
+                          <Star className="size-3.5 text-emerald-600" />
                         </Button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
-                        onClick={() => noteActionMutation.mutate({ noteId: n.id, action: 'feature' })}
-                        title="Feature note"
-                      >
-                        <Star className="size-3.5 text-emerald-600" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 hover:bg-destructive/10"
-                        onClick={() => noteActionMutation.mutate({ noteId: n.id, action: 'remove' })}
-                        title="Remove note"
-                      >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                      {n.status !== 'removed' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 hover:bg-destructive/10"
+                          onClick={() => {
+                            setNoteToRemove({ id: n.id, title: n.title });
+                            setRemoveReason('');
+                            setRemoveDialogOpen(true);
+                          }}
+                          title="Remove note"
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -770,6 +898,40 @@ function NotesTab() {
           </Button>
         </div>
       )}
+
+      {/* Remove Note Dialog */}
+      <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Note</DialogTitle>
+            <DialogDescription>
+              Remove &quot;{noteToRemove?.title}&quot; from the platform. This action will set the note status to removed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="remove-reason">Reason for removal *</Label>
+              <Textarea
+                id="remove-reason"
+                placeholder="e.g., Contains copyrighted material, violates community guidelines..."
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                className="min-h-[80px] resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveDialogOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!removeReason.trim() || adminActionMutation.isPending}
+              onClick={handleRemoveNote}
+            >
+              {adminActionMutation.isPending ? 'Removing...' : 'Remove Note'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -800,15 +962,29 @@ function ReportsTab() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
-  const reportActionMutation = useMutation({
-    mutationFn: ({ reportId, action }: { reportId: string; action: string }) =>
-      adminAction('/api/admin/reports', 'PUT', { reportId, action }),
-    onSuccess: (_, variables) => {
+  // Admin action mutation - POST /api/admin
+  const adminActionMutation = useMutation({
+    mutationFn: adminPostAction,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-reports'] });
-      toast.success(`Report ${variables.action === 'resolve' ? 'resolved' : 'dismissed'}`);
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const handleResolve = (reportId: string) => {
+    adminActionMutation.mutate(
+      { action: 'resolveReport', id: reportId, reportAction: 'resolve' },
+      { onSuccess: () => toast.success('Report resolved') },
+    );
+  };
+
+  const handleDismiss = (reportId: string) => {
+    adminActionMutation.mutate(
+      { action: 'resolveReport', id: reportId, reportAction: 'dismiss' },
+      { onSuccess: () => toast.success('Report dismissed') },
+    );
+  };
 
   const statusBadgeColor = (status: string) => {
     switch (status) {
@@ -892,7 +1068,8 @@ function ReportsTab() {
                           variant="outline"
                           size="sm"
                           className="h-7 text-xs gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800"
-                          onClick={() => reportActionMutation.mutate({ reportId: report.id, action: 'resolve' })}
+                          disabled={adminActionMutation.isPending}
+                          onClick={() => handleResolve(report.id)}
                         >
                           <CheckCircle2 className="size-3" /> Resolve
                         </Button>
@@ -900,7 +1077,8 @@ function ReportsTab() {
                           variant="outline"
                           size="sm"
                           className="h-7 text-xs gap-1"
-                          onClick={() => reportActionMutation.mutate({ reportId: report.id, action: 'dismiss' })}
+                          disabled={adminActionMutation.isPending}
+                          onClick={() => handleDismiss(report.id)}
                         >
                           <X className="size-3" /> Dismiss
                         </Button>
@@ -934,9 +1112,19 @@ function ReportsTab() {
 function CollegesTab() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newCollege, setNewCollege] = useState({ name: '', shortName: '', city: '', state: '' });
   const limit = 10;
+
+  // Add dialog state
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newCollege, setNewCollege] = useState({ name: '', shortName: '', city: '', state: '', country: '', type: '', website: '' });
+
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editCollege, setEditCollege] = useState<CollegeData & { website?: string; country?: string } | null>(null);
+
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [collegeToDelete, setCollegeToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const params = new URLSearchParams({
     page: String(page),
@@ -948,21 +1136,76 @@ function CollegesTab() {
     queryFn: () => fetchAdminColleges(params),
   });
 
-  const colleges: CollegeData[] = data?.colleges ?? [];
+  const colleges: (CollegeData & { website?: string; country?: string })[] = data?.colleges ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
+  // Add college mutation - POST /api/colleges
   const addCollegeMutation = useMutation({
     mutationFn: (college: typeof newCollege) =>
-      adminAction('/api/admin/colleges', 'POST', college),
+      fetch('/api/colleges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(college),
+      }).then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to add college');
+        return data;
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-colleges'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
       setAddDialogOpen(false);
-      setNewCollege({ name: '', shortName: '', city: '', state: '' });
+      setNewCollege({ name: '', shortName: '', city: '', state: '', country: '', type: '', website: '' });
       toast.success('College added successfully');
     },
     onError: (error) => toast.error(error.message),
   });
+
+  // Admin action mutation - POST /api/admin
+  const adminActionMutation = useMutation({
+    mutationFn: adminPostAction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-colleges'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const handleUpdateCollege = () => {
+    if (!editCollege) return;
+    const updateData: Record<string, unknown> = { action: 'updateCollege', id: editCollege.id };
+    if (editCollege.name) updateData.name = editCollege.name;
+    if (editCollege.shortName !== undefined) updateData.shortName = editCollege.shortName;
+    if (editCollege.city !== undefined) updateData.city = editCollege.city;
+    if (editCollege.state !== undefined) updateData.state = editCollege.state;
+    if (editCollege.country !== undefined) updateData.country = editCollege.country;
+    if (editCollege.type !== undefined) updateData.type = editCollege.type;
+    if (editCollege.website !== undefined) updateData.website = editCollege.website;
+    if (editCollege.isVerified !== undefined) updateData.isVerified = editCollege.isVerified;
+
+    adminActionMutation.mutate(updateData, {
+      onSuccess: () => {
+        toast.success('College updated successfully');
+        setEditDialogOpen(false);
+        setEditCollege(null);
+      },
+    });
+  };
+
+  const handleDeleteCollege = () => {
+    if (!collegeToDelete) return;
+    adminActionMutation.mutate(
+      { action: 'deleteCollege', id: collegeToDelete.id },
+      {
+        onSuccess: () => {
+          toast.success('College deleted successfully');
+          setDeleteDialogOpen(false);
+          setCollegeToDelete(null);
+        },
+      },
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -998,6 +1241,7 @@ function CollegesTab() {
                 <TableHead>Location</TableHead>
                 <TableHead>Verified</TableHead>
                 <TableHead>Notes</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1024,6 +1268,34 @@ function CollegesTab() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm">{college.noteCount}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                        onClick={() => {
+                          setEditCollege({ ...college });
+                          setEditDialogOpen(true);
+                        }}
+                        title="Edit college"
+                      >
+                        <Pencil className="size-3.5 text-emerald-600" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 hover:bg-destructive/10"
+                        onClick={() => {
+                          setCollegeToDelete({ id: college.id, name: college.name });
+                          setDeleteDialogOpen(true);
+                        }}
+                        title="Delete college"
+                      >
+                        <Trash2 className="size-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -1072,23 +1344,60 @@ function CollegesTab() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="city">City</Label>
+                <Label htmlFor="add-city">City</Label>
                 <Input
-                  id="city"
+                  id="add-city"
                   value={newCollege.city}
                   onChange={(e) => setNewCollege((p) => ({ ...p, city: e.target.value }))}
                   placeholder="e.g., New Delhi"
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="state">State</Label>
-              <Input
-                id="state"
-                value={newCollege.state}
-                onChange={(e) => setNewCollege((p) => ({ ...p, state: e.target.value }))}
-                placeholder="e.g., Delhi"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="add-state">State</Label>
+                <Input
+                  id="add-state"
+                  value={newCollege.state}
+                  onChange={(e) => setNewCollege((p) => ({ ...p, state: e.target.value }))}
+                  placeholder="e.g., Delhi"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-country">Country</Label>
+                <Input
+                  id="add-country"
+                  value={newCollege.country}
+                  onChange={(e) => setNewCollege((p) => ({ ...p, country: e.target.value }))}
+                  placeholder="e.g., India"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="add-type">Type</Label>
+                <Select value={newCollege.type || '_none'} onValueChange={(v) => setNewCollege((p) => ({ ...p, type: v === '_none' ? '' : v }))}>
+                  <SelectTrigger id="add-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">None</SelectItem>
+                    <SelectItem value="university">University</SelectItem>
+                    <SelectItem value="college">College</SelectItem>
+                    <SelectItem value="institute">Institute</SelectItem>
+                    <SelectItem value="deemed_university">Deemed University</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-website">Website</Label>
+                <Input
+                  id="add-website"
+                  value={newCollege.website}
+                  onChange={(e) => setNewCollege((p) => ({ ...p, website: e.target.value }))}
+                  placeholder="e.g., https://iitd.ac.in"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1103,6 +1412,141 @@ function CollegesTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit College Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit College</DialogTitle>
+            <DialogDescription>Update college information.</DialogDescription>
+          </DialogHeader>
+          {editCollege && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">College Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={editCollege.name}
+                  onChange={(e) => setEditCollege((p) => p ? { ...p, name: e.target.value } : p)}
+                  placeholder="e.g., Indian Institute of Technology Delhi"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-short-name">Short Name</Label>
+                  <Input
+                    id="edit-short-name"
+                    value={editCollege.shortName || ''}
+                    onChange={(e) => setEditCollege((p) => p ? { ...p, shortName: e.target.value } : p)}
+                    placeholder="e.g., IIT Delhi"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-city">City</Label>
+                  <Input
+                    id="edit-city"
+                    value={editCollege.city || ''}
+                    onChange={(e) => setEditCollege((p) => p ? { ...p, city: e.target.value } : p)}
+                    placeholder="e.g., New Delhi"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-state">State</Label>
+                  <Input
+                    id="edit-state"
+                    value={editCollege.state || ''}
+                    onChange={(e) => setEditCollege((p) => p ? { ...p, state: e.target.value } : p)}
+                    placeholder="e.g., Delhi"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-country">Country</Label>
+                  <Input
+                    id="edit-country"
+                    value={editCollege.country || ''}
+                    onChange={(e) => setEditCollege((p) => p ? { ...p, country: e.target.value } : p)}
+                    placeholder="e.g., India"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-type">Type</Label>
+                  <Select value={editCollege.type || '_none'} onValueChange={(v) => setEditCollege((p) => p ? { ...p, type: v === '_none' ? '' : v } : p)}>
+                    <SelectTrigger id="edit-type">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">None</SelectItem>
+                      <SelectItem value="university">University</SelectItem>
+                      <SelectItem value="college">College</SelectItem>
+                      <SelectItem value="institute">Institute</SelectItem>
+                      <SelectItem value="deemed_university">Deemed University</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-website">Website</Label>
+                  <Input
+                    id="edit-website"
+                    value={editCollege.website || ''}
+                    onChange={(e) => setEditCollege((p) => p ? { ...p, website: e.target.value } : p)}
+                    placeholder="e.g., https://iitd.ac.in"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Label htmlFor="edit-verified">Verified Status</Label>
+                <Button
+                  id="edit-verified"
+                  variant={editCollege.isVerified ? 'default' : 'outline'}
+                  size="sm"
+                  className={editCollege.isVerified ? 'bg-emerald-600 hover:bg-emerald-700 text-white gap-1' : 'gap-1'}
+                  onClick={() => setEditCollege((p) => p ? { ...p, isVerified: !p.isVerified } : p)}
+                >
+                  {editCollege.isVerified ? <CheckCircle2 className="size-3.5" /> : <X className="size-3.5" />}
+                  {editCollege.isVerified ? 'Verified' : 'Unverified'}
+                </Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+              disabled={!editCollege?.name?.trim() || adminActionMutation.isPending}
+              onClick={handleUpdateCollege}
+            >
+              {adminActionMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete College</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{collegeToDelete?.name}&quot;? This action cannot be undone.
+              Colleges with departments or notes assigned cannot be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={adminActionMutation.isPending}
+              onClick={handleDeleteCollege}
+            >
+              {adminActionMutation.isPending ? 'Deleting...' : 'Delete College'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

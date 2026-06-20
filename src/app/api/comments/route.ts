@@ -2,13 +2,119 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
 
+// PUT - Edit a comment
+export async function PUT(request: NextRequest) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { commentId, content } = body;
+
+    if (!commentId || !content?.trim()) {
+      return NextResponse.json({ success: false, error: 'commentId and content are required' }, { status: 400 });
+    }
+
+    const comment = await db.comment.findUnique({ where: { id: commentId } });
+    if (!comment) {
+      return NextResponse.json({ success: false, error: 'Comment not found' }, { status: 404 });
+    }
+
+    if (comment.isDeleted) {
+      return NextResponse.json({ success: false, error: 'Cannot edit a deleted comment' }, { status: 400 });
+    }
+
+    // Only the comment author can edit
+    if (comment.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Only the comment author can edit' }, { status: 403 });
+    }
+
+    const updatedComment = await db.comment.update({
+      where: { id: commentId },
+      data: {
+        content: content.trim(),
+        isEdited: true,
+      },
+      include: {
+        user: { select: { id: true, name: true, avatarUrl: true, role: true } },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      comment: {
+        id: updatedComment.id,
+        content: updatedComment.content,
+        isEdited: updatedComment.isEdited,
+        parentId: updatedComment.parentId,
+        createdAt: updatedComment.createdAt.toISOString(),
+        updatedAt: updatedComment.updatedAt.toISOString(),
+        user: updatedComment.user,
+      },
+    });
+  } catch (error) {
+    console.error('Comment update error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to update comment' }, { status: 500 });
+  }
+}
+
+// DELETE - Soft delete a comment
+export async function DELETE(request: NextRequest) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const commentId = searchParams.get('commentId');
+
+    if (!commentId) {
+      return NextResponse.json({ success: false, error: 'commentId is required' }, { status: 400 });
+    }
+
+    const comment = await db.comment.findUnique({ where: { id: commentId } });
+    if (!comment) {
+      return NextResponse.json({ success: false, error: 'Comment not found' }, { status: 404 });
+    }
+
+    if (comment.isDeleted) {
+      return NextResponse.json({ success: false, error: 'Comment already deleted' }, { status: 400 });
+    }
+
+    // Only comment author or admin/moderator can delete
+    if (comment.userId !== user.id && !['admin', 'super_admin', 'moderator'].includes(user.role)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    // Soft delete: set isDeleted to true
+    await db.comment.update({
+      where: { id: commentId },
+      data: { isDeleted: true },
+    });
+
+    // Decrement note's commentCount
+    await db.note.update({
+      where: { id: comment.noteId },
+      data: { commentCount: { decrement: 1 } },
+    });
+
+    return NextResponse.json({ success: true, message: 'Comment deleted successfully' });
+  } catch (error) {
+    console.error('Comment delete error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete comment' }, { status: 500 });
+  }
+}
+
 // GET - Comments for a note
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const noteId = searchParams.get('noteId');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '20') || 20));
 
     if (!noteId) {
       return NextResponse.json({ success: false, error: 'noteId is required' }, { status: 400 });

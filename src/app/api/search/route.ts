@@ -8,8 +8,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q') || '';
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '12');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '12') || 12));
     const collegeId = searchParams.get('collegeId');
     const departmentId = searchParams.get('departmentId');
     const subjectId = searchParams.get('subjectId');
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     if (collegeId) where.collegeId = collegeId;
     if (departmentId) where.departmentId = departmentId;
     if (subjectId) where.subjectId = subjectId;
-    if (semester) where.semester = parseInt(semester);
+    if (semester) { const s = parseInt(semester); if (!isNaN(s)) where.semester = s; }
     if (fileType) where.fileType = fileType;
 
     // Sorting

@@ -1,0 +1,502 @@
+     1→     1→import { NextRequest, NextResponse } from 'next/server';
+     2→     2→import { db } from '@/lib/db';
+     3→     3→import { hashPassword, getAuthUser, hasRole } from '@/lib/auth';
+     4→     4→
+     5→     5→// POST - Seed database with sample data
+     6→     6→export async function POST(request: NextRequest) {
+     7→     7→  try {
+     8→     8→    // Authentication and admin role check
+     9→     9→    const user = await getAuthUser();
+    10→    10→    if (!user) {
+    11→    11→      return NextResponse.json({ success: false, error: 'Unauthorized. Authentication required.' }, { status: 401 });
+    12→    12→    }
+    13→    13→    if (!hasRole(user.role, ['admin'])) {
+    14→    14→      return NextResponse.json({ success: false, error: 'Forbidden. Admin access required.' }, { status: 403 });
+    15→    15→    }
+    16→    16→
+    17→    17→    // Check if already seeded
+    18→    18→    const existingColleges = await db.college.count();
+    19→    19→    if (existingColleges > 0) {
+    20→    20→      return NextResponse.json({
+    21→    21→        success: false,
+    22→    22→        error: 'Database already seeded. Clear data first.',
+    23→    23→      }, { status: 400 });
+    24→    24→    }
+    25→    25→
+    26→    26→    // ============================================================
+    27→    27→    // 1. COLLEGES
+    28→    28→    // ============================================================
+    29→    29→    const colleges = await Promise.all([
+    30→    30→      db.college.create({
+    31→    31→        data: {
+    32→    32→          name: 'Indian Institute of Technology Bombay',
+    33→    33→          shortName: 'IIT Bombay',
+    34→    34→          city: 'Mumbai',
+    35→    35→          state: 'Maharashtra',
+    36→    36→          country: 'India',
+    37→    37→          type: 'university',
+    38→    38→          website: 'https://www.iitb.ac.in',
+    39→    39→          isVerified: true,
+    40→    40→        },
+    41→    41→      }),
+    42→    42→      db.college.create({
+    43→    43→        data: {
+    44→    44→          name: 'All India Institute of Medical Sciences New Delhi',
+    45→    45→          shortName: 'AIIMS Delhi',
+    46→    46→          city: 'New Delhi',
+    47→    47→          state: 'Delhi',
+    48→    48→          country: 'India',
+    49→    49→          type: 'institute',
+    50→    50→          website: 'https://www.aiims.edu',
+    51→    51→          isVerified: true,
+    52→    52→        },
+    53→    53→      }),
+    54→    54→      db.college.create({
+    55→    55→        data: {
+    56→    56→          name: 'National Law School of India University',
+    57→    57→          shortName: 'NLSIU',
+    58→    58→          city: 'Bengaluru',
+    59→    59→          state: 'Karnataka',
+    60→    60→          country: 'India',
+    61→    61→          type: 'university',
+    62→    62→          website: 'https://www.nls.ac.in',
+    63→    63→          isVerified: true,
+    64→    64→        },
+    65→    65→      }),
+    66→    66→      db.college.create({
+    67→    67→        data: {
+    68→    68→          name: 'Indian Institute of Technology Delhi',
+    69→    69→          shortName: 'IIT Delhi',
+    70→    70→          city: 'New Delhi',
+    71→    71→          state: 'Delhi',
+    72→    72→          country: 'India',
+    73→    73→          type: 'university',
+    74→    74→          website: 'https://www.iitd.ac.in',
+    75→    75→          isVerified: true,
+    76→    76→        },
+    77→    77→      }),
+    78→    78→    ]);
+    79→    79→
+    80→    80→    // ============================================================
+    81→    81→    // 2. DEPARTMENTS
+    82→    82→    // ============================================================
+    83→    83→    const departments = await Promise.all([
+    84→    84→      // IIT Bombay departments
+    85→    85→      db.department.create({
+    86→    86→        data: { name: 'Computer Science & Engineering', code: 'CSE', collegeId: colleges[0].id },
+    87→    87→      }),
+    88→    88→      db.department.create({
+    89→    89→        data: { name: 'Electrical Engineering', code: 'EE', collegeId: colleges[0].id },
+    90→    90→      }),
+    91→    91→      db.department.create({
+    92→    92→        data: { name: 'Mechanical Engineering', code: 'ME', collegeId: colleges[0].id },
+    93→    93→      }),
+    94→    94→      // AIIMS Delhi departments
+    95→    95→      db.department.create({
+    96→    96→        data: { name: 'General Medicine', code: 'GM', collegeId: colleges[1].id },
+    97→    97→      }),
+    98→    98→      db.department.create({
+    99→    99→        data: { name: 'Anatomy', code: 'ANAT', collegeId: colleges[1].id },
+   100→   100→      }),
+   101→   101→      // NLSIU departments
+   102→   102→      db.department.create({
+   103→   103→        data: { name: 'Constitutional Law', code: 'CL', collegeId: colleges[2].id },
+   104→   104→      }),
+   105→   105→      // IIT Delhi departments
+   106→   106→      db.department.create({
+   107→   107→        data: { name: 'Computer Science & Engineering', code: 'CSE', collegeId: colleges[3].id },
+   108→   108→      }),
+   109→   109→      db.department.create({
+   110→   110→        data: { name: 'Mathematics', code: 'MATH', collegeId: colleges[3].id },
+   111→   111→      }),
+   112→   112→    ]);
+   113→   113→
+   114→   114→    // ============================================================
+   115→   115→    // 3. SUBJECTS
+   116→   116→    // ============================================================
+   117→   117→    const subjects = await Promise.all([
+   118→   118→      // CSE subjects (IIT Bombay)
+   119→   119→      db.subject.create({
+   120→   120→        data: { name: 'Data Structures & Algorithms', code: 'CS201', semester: 3, departmentId: departments[0].id, collegeId: colleges[0].id, description: 'Fundamental data structures and algorithm design techniques' },
+   121→   121→      }),
+   122→   122→      db.subject.create({
+   123→   123→        data: { name: 'Operating Systems', code: 'CS301', semester: 5, departmentId: departments[0].id, collegeId: colleges[0].id, description: 'Process management, memory management, file systems' },
+   124→   124→      }),
+   125→   125→      db.subject.create({
+   126→   126→        data: { name: 'Machine Learning', code: 'CS401', semester: 7, departmentId: departments[0].id, collegeId: colleges[0].id, description: 'Supervised and unsupervised learning, neural networks' },
+   127→   127→      }),
+   128→   128→      db.subject.create({
+   129→   129→        data: { name: 'Database Management Systems', code: 'CS202', semester: 4, departmentId: departments[0].id, collegeId: colleges[0].id, description: 'Relational databases, SQL, normalization, transactions' },
+   130→   130→      }),
+   131→   131→      // EE subjects
+   132→   132→      db.subject.create({
+   133→   133→        data: { name: 'Signals & Systems', code: 'EE301', semester: 5, departmentId: departments[1].id, collegeId: colleges[0].id, description: 'Fourier analysis, Laplace transforms, signal processing' },
+   134→   134→      }),
+   135→   135→      // ME subjects
+   136→   136→      db.subject.create({
+   137→   137→        data: { name: 'Thermodynamics', code: 'ME201', semester: 3, departmentId: departments[2].id, collegeId: colleges[0].id, description: 'Laws of thermodynamics, entropy, cycles' },
+   138→   138→      }),
+   139→   139→      // Medical subjects
+   140→   140→      db.subject.create({
+   141→   141→        data: { name: 'Human Anatomy', code: 'MED101', semester: 1, departmentId: departments[3].id, collegeId: colleges[1].id, description: 'Structure and organization of the human body' },
+   142→   142→      }),
+   143→   143→      db.subject.create({
+   144→   144→        data: { name: 'Pharmacology', code: 'MED301', semester: 5, departmentId: departments[3].id, collegeId: colleges[1].id, description: 'Drug actions, interactions, and therapeutic uses' },
+   145→   145→      }),
+   146→   146→      db.subject.create({
+   147→   147→        data: { name: 'Pathology', code: 'MED201', semester: 3, departmentId: departments[4].id, collegeId: colleges[1].id, description: 'Study of diseases, their causes and effects' },
+   148→   148→      }),
+   149→   149→      // Law subjects
+   150→   150→      db.subject.create({
+   151→   151→        data: { name: 'Constitutional Law I', code: 'LAW101', semester: 1, departmentId: departments[5].id, collegeId: colleges[2].id, description: 'Fundamental rights, directive principles, constitutional framework' },
+   152→   152→      }),
+   153→   153→      db.subject.create({
+   154→   154→        data: { name: 'Criminal Law', code: 'LAW201', semester: 3, departmentId: departments[5].id, collegeId: colleges[2].id, description: 'IPC, CrPC, Indian Evidence Act' },
+   155→   155→      }),
+   156→   156→      // IIT Delhi subjects
+   157→   157→      db.subject.create({
+   158→   158→        data: { name: 'Artificial Intelligence', code: 'CS501', semester: 7, departmentId: departments[6].id, collegeId: colleges[3].id, description: 'Search algorithms, knowledge representation, NLP' },
+   159→   159→      }),
+   160→   160→      db.subject.create({
+   161→   161→        data: { name: 'Linear Algebra', code: 'MA201', semester: 3, departmentId: departments[7].id, collegeId: colleges[3].id, description: 'Vectors, matrices, eigenvalues, linear transformations' },
+   162→   162→      }),
+   163→   163→    ]);
+   164→   164→
+   165→   165→    // ============================================================
+   166→   166→    // 4. USERS
+   167→   167→    // ============================================================
+   168→   168→    const passwordHash = await hashPassword('password123');
+   169→   169→
+   170→   170→    const users = await Promise.all([
+   171→   171→      db.user.create({
+   172→   172→        data: {
+   173→   173→          name: 'Arjun Sharma',
+   174→   174→          email: 'arjun@iitb.ac.in',
+   175→   175→          passwordHash,
+   176→   176→          role: 'contributor',
+   177→   177→          bio: 'CS enthusiast at IIT Bombay. Love sharing study materials!',
+   178→   178→          provider: 'email',
+   179→   179→          profile: {
+   180→   180→            create: {
+   181→   181→              collegeId: colleges[0].id,
+   182→   182→              departmentId: departments[0].id,
+   183→   183→              semester: 6,
+   184→   184→              year: 3,
+   185→   185→              contributionScore: 85,
+   186→   186→              reputationScore: 120,
+   187→   187→              uploadCount: 12,
+   188→   188→              downloadCount: 45,
+   189→   189→              followerCount: 34,
+   190→   190→              followingCount: 15,
+   191→   191→              noteCount: 10,
+   192→   192→            },
+   193→   193→          },
+   194→   194→        },
+   195→   195→      }),
+   196→   196→      db.user.create({
+   197→   197→        data: {
+   198→   198→          name: 'Priya Patel',
+   199→   199→          email: 'priya@aiims.edu',
+   200→   200→          passwordHash,
+   201→   201→          role: 'verified_student',
+   202→   202→          bio: 'Medical student at AIIMS Delhi. Passionate about anatomy and physiology.',
+   203→   203→          provider: 'email',
+   204→   204→          profile: {
+   205→   205→            create: {
+   206→   206→              collegeId: colleges[1].id,
+   207→   207→              departmentId: departments[3].id,
+   208→   208→              semester: 4,
+   209→   209→              year: 2,
+   210→   210→              contributionScore: 55,
+   211→   211→              reputationScore: 78,
+   212→   212→              uploadCount: 6,
+   213→   213→              downloadCount: 30,
+   214→   214→              followerCount: 22,
+   215→   215→              followingCount: 10,
+   216→   216→              noteCount: 5,
+   217→   217→            },
+   218→   218→          },
+   219→   219→        },
+   220→   220→      }),
+   221→   221→      db.user.create({
+   222→   222→        data: {
+   223→   223→          name: 'Rahul Krishnan',
+   224→   224→          email: 'rahul@nlsiu.ac.in',
+   225→   225→          passwordHash,
+   226→   226→          role: 'student',
+   227→   227→          bio: 'Law student at NLSIU Bengaluru. Focused on constitutional law.',
+   228→   228→          provider: 'email',
+   229→   229→          profile: {
+   230→   230→            create: {
+   231→   231→              collegeId: colleges[2].id,
+   232→   232→              departmentId: departments[5].id,
+   233→   233→              semester: 3,
+   234→   234→              year: 2,
+   235→   235→              contributionScore: 30,
+   236→   236→              reputationScore: 45,
+   237→   237→              uploadCount: 4,
+   238→   238→              downloadCount: 20,
+   239→   239→              followerCount: 12,
+   240→   240→              followingCount: 8,
+   241→   241→              noteCount: 3,
+   242→   242→            },
+   243→   243→          },
+   244→   244→        },
+   245→   245→      }),
+   246→   246→      db.user.create({
+   247→   247→        data: {
+   248→   248→          name: 'Sneha Reddy',
+   249→   249→          email: 'sneha@iitd.ac.in',
+   250→   250→          passwordHash,
+   251→   251→          role: 'contributor',
+   252→   252→          bio: 'AI researcher at IIT Delhi. Machine learning and deep learning enthusiast.',
+   253→   253→          provider: 'email',
+   254→   254→          profile: {
+   255→   255→            create: {
+   256→   256→              collegeId: colleges[3].id,
+   257→   257→              departmentId: departments[6].id,
+   258→   258→              semester: 7,
+   259→   259→              year: 4,
+   260→   260→              contributionScore: 95,
+   261→   261→              reputationScore: 150,
+   262→   262→              uploadCount: 15,
+   263→   263→              downloadCount: 60,
+   264→   264→              followerCount: 48,
+   265→   265→              followingCount: 20,
+   266→   266→              noteCount: 12,
+   267→   267→            },
+   268→   268→          },
+   269→   269→        },
+   270→   270→      }),
+   271→   271→      db.user.create({
+   272→   272→        data: {
+   273→   273→          name: 'Admin User',
+   274→   274→          email: 'admin@notespedia.in',
+   275→   275→          passwordHash,
+   276→   276→          role: 'admin',
+   277→   277→          bio: 'NotesPedia platform administrator',
+   278→   278→          provider: 'email',
+   279→   279→          profile: {
+   280→   280→            create: {
+   281→   281→              contributionScore: 200,
+   282→   282→              reputationScore: 300,
+   283→   283→              uploadCount: 0,
+   284→   284→              downloadCount: 0,
+   285→   285→              followerCount: 100,
+   286→   286→              followingCount: 0,
+   287→   287→              noteCount: 0,
+   288→   288→            },
+   289→   289→          },
+   290→   290→        },
+   291→   291→      }),
+   292→   292→    ]);
+   293→   293→
+   294→   294→    // ============================================================
+   295→   295→    // 5. NOTES
+   296→   296→    // ============================================================
+   297→   297→    const noteData = [
+   298→   298→      {
+   299→   299→        title: 'Complete DSA Notes - Trees & Graphs',
+   300→   300→        description: 'Comprehensive notes covering binary trees, BST, AVL trees, graph traversal (BFS/DFS), and shortest path algorithms.',
+   301→   301→        extractedText: 'Binary Trees: A binary tree is a hierarchical data structure where each node has at most two children, referred to as left and right child. Types of binary trees include full binary tree, complete binary tree, and perfect binary tree.\n\nGraph Traversal: BFS (Breadth-First Search) explores all neighbors at the current depth before moving to the next level. It uses a queue data structure and is optimal for finding shortest paths in unweighted graphs. DFS (Depth-First Search) explores as far as possible along each branch before backtracking. It uses a stack or recursion and is useful for topological sorting and detecting cycles.\n\nDijkstra\'s Algorithm: Finds the shortest path from a source to all other vertices in a weighted graph with non-negative weights. Time complexity is O(V²) with adjacency matrix and O((V+E)logV) with min-heap.',
+   302→   302→        subjectId: subjects[0].id, collegeId: colleges[0].id, departmentId: departments[0].id, semester: 3,
+   303→   303→        uploaderId: users[0].id, fileType: 'pdf', fileSize: 2400000, downloadCount: 156, viewCount: 890, bookmarkCount: 45, avgRating: 4.5, ratingCount: 23,
+   304→   304→      },
+   305→   305→      {
+   306→   306→        title: 'Operating Systems - Process Synchronization',
+   307→   307→        description: 'Detailed notes on process synchronization, semaphores, mutex, deadlock handling, and classical synchronization problems.',
+   308→   308→        extractedText: 'Process Synchronization: Coordination of execution of multiple processes to ensure data consistency when processes share resources. Critical section problem requires mutual exclusion, progress, and bounded waiting.\n\nSemaphores: A synchronization primitive that controls access to shared resources. Counting semaphores can have any non-negative value, while binary semaphores (mutex) have values 0 or 1. Wait(P) operation decrements the value, and Signal(V) operation increments it.\n\nDeadlock: A condition where two or more processes are unable to proceed because each is waiting for the other to release a resource. Four necessary conditions: mutual exclusion, hold and wait, no preemption, circular wait. Prevention strategies include eliminating one of the four conditions.',
+   309→   309→        subjectId: subjects[1].id, collegeId: colleges[0].id, departmentId: departments[0].id, semester: 5,
+   310→   310→        uploaderId: users[0].id, fileType: 'pdf', fileSize: 1800000, downloadCount: 98, viewCount: 456, bookmarkCount: 32, avgRating: 4.2, ratingCount: 15,
+   311→   311→      },
+   312→   312→      {
+   313→   313→        title: 'Machine Learning Fundamentals',
+   314→   314→        description: 'Intro to ML: regression, classification, clustering, neural networks basics with Python examples.',
+   315→   315→        extractedText: 'Supervised Learning: The algorithm learns from labeled training data to make predictions. Regression predicts continuous values (e.g., house prices), while classification predicts discrete categories (e.g., spam/not spam). Linear regression minimizes the sum of squared errors. Logistic regression uses the sigmoid function to output probabilities.\n\nUnsupervised Learning: Finds patterns in unlabeled data. K-means clustering partitions data into K clusters by minimizing within-cluster variance. Hierarchical clustering builds a tree of clusters. PCA reduces dimensionality while preserving variance.\n\nNeural Networks: Composed of layers of interconnected neurons. Each neuron computes weighted sum of inputs plus bias, applies activation function (ReLU, sigmoid, tanh). Backpropagation computes gradients for weight updates using chain rule.',
+   316→   316→        subjectId: subjects[2].id, collegeId: colleges[0].id, departmentId: departments[0].id, semester: 7,
+   317→   317→        uploaderId: users[3].id, fileType: 'pdf', fileSize: 3200000, downloadCount: 234, viewCount: 1200, bookmarkCount: 67, avgRating: 4.8, ratingCount: 42,
+   318→   318→      },
+   319→   319→      {
+   320→   320→        title: 'DBMS - Normalization & Transaction Management',
+   321→   321→        description: 'Complete guide to database normalization (1NF to BCNF) and ACID properties with examples.',
+   322→   322→        extractedText: 'Normalization: Process of organizing database to reduce redundancy and improve data integrity. First Normal Form (1NF) eliminates repeating groups. Second Normal Form (2NF) removes partial dependencies. Third Normal Form (3NF) eliminates transitive dependencies. BCNF is a stricter version of 3NF where every determinant is a candidate key.\n\nACID Properties: Atomicity ensures all or nothing execution. Consistency maintains database integrity constraints. Isolation ensures concurrent transactions don\'t interfere. Durability guarantees committed transactions persist even after failures.\n\nTwo-Phase Locking: A concurrency control protocol. Growing phase acquires locks, shrinking phase releases locks. Prevents conflicts but can cause deadlocks.',
+   323→   323→        subjectId: subjects[3].id, collegeId: colleges[0].id, departmentId: departments[0].id, semester: 4,
+   324→   324→        uploaderId: users[0].id, fileType: 'docx', fileSize: 1500000, downloadCount: 67, viewCount: 345, bookmarkCount: 21, avgRating: 4.0, ratingCount: 10,
+   325→   325→      },
+   326→   326→      {
+   327→   327→        title: 'Signals & Systems - Fourier Analysis',
+   328→   328→        description: 'Fourier series, Fourier transform, properties, and applications in signal processing.',
+   329→   329→        extractedText: 'Fourier Series: Any periodic signal can be expressed as a sum of sinusoids. x(t) = a₀ + Σ[aₙcos(nω₀t) + bₙsin(nω₀t)]. Coefficients are computed using orthogonality of sinusoids. Convergence requires Dirichlet conditions.\n\nFourier Transform: Extends Fourier series to non-periodic signals. X(jω) = ∫x(t)e^(-jωt)dt. Converts time-domain signals to frequency-domain representation. Key properties: linearity, time-shifting, frequency-shifting, convolution, and Parseval\'s theorem.\n\nApplications: Filtering, spectral analysis, modulation, image processing. FFT (Fast Fourier Transform) reduces computation from O(N²) to O(NlogN).',
+   330→   330→        subjectId: subjects[4].id, collegeId: colleges[0].id, departmentId: departments[1].id, semester: 5,
+   331→   331→        uploaderId: users[0].id, fileType: 'pdf', fileSize: 2800000, downloadCount: 45, viewCount: 210, bookmarkCount: 15, avgRating: 3.8, ratingCount: 8,
+   332→   332→      },
+   333→   333→      {
+   334→   334→        title: 'Thermodynamics - First & Second Law',
+   335→   335→        description: 'Comprehensive coverage of thermodynamic laws, entropy, and thermodynamic cycles.',
+   336→   336→        extractedText: 'First Law of Thermodynamics: Energy cannot be created or destroyed, only converted from one form to another. For a closed system: Q = ΔU + W. Internal energy is a state function, while heat and work are path functions.\n\nSecond Law of Thermodynamics: Kelvin-Planck statement - no heat engine can convert all heat to work. Clausius statement - heat cannot flow from cold to hot without external work. Entropy is a measure of disorder. For reversible processes: ΔS = Q/T. For irreversible processes: ΔS > Q/T.\n\nCarnot Cycle: Most efficient heat engine operating between two temperatures. Efficiency = 1 - T_cold/T_hot. Consists of two isothermal and two adiabatic processes.',
+   337→   337→        subjectId: subjects[5].id, collegeId: colleges[0].id, departmentId: departments[2].id, semester: 3,
+   338→   338→        uploaderId: users[0].id, fileType: 'txt', fileSize: 45000, downloadCount: 34, viewCount: 178, bookmarkCount: 12, avgRating: 3.5, ratingCount: 6,
+   339→   339→      },
+   340→   340→      {
+   341→   341→        title: 'Human Anatomy - Musculoskeletal System',
+   342→   342→        description: 'Detailed notes on bones, joints, muscles, and their clinical correlations.',
+   343→   343→        extractedText: 'Skeletal System: The human skeleton consists of 206 bones. Axial skeleton includes skull, vertebral column, and rib cage (80 bones). Appendicular skeleton includes limbs and girdles (126 bones). Bones are classified by shape: long, short, flat, irregular, and sesamoid.\n\nJoints: Classified structurally as fibrous, cartilaginous, or synovial. Synovial joints are the most common and mobile type. Types include hinge (elbow), pivot (atlantoaxial), ball-and-socket (hip), saddle (CMC of thumb), and plane (intercarpal).\n\nMuscular System: Three types - skeletal (voluntary), smooth (involuntary), cardiac (involuntary, striated). Skeletal muscles attach via tendons. Contraction types: isotonic (concentric/eccentric) and isometric. Motor unit = one motor neuron + all muscle fibers it innervates.',
+   344→   344→        subjectId: subjects[6].id, collegeId: colleges[1].id, departmentId: departments[3].id, semester: 1,
+   345→   345→        uploaderId: users[1].id, fileType: 'pdf', fileSize: 5600000, downloadCount: 189, viewCount: 920, bookmarkCount: 56, avgRating: 4.6, ratingCount: 28,
+   346→   346→      },
+   347→   347→      {
+   348→   348→        title: 'Pharmacology - Drug Receptors & Mechanisms',
+   349→   349→        description: 'Notes on drug-receptor interactions, dose-response relationships, and pharmacokinetics.',
+   350→   350→        extractedText: 'Drug-Receptor Interactions: Drugs bind to specific receptors to produce effects. Agonists activate receptors, antagonists block them. Affinity is the strength of drug-receptor binding. Efficacy is the ability to produce a response. Competitive antagonists can be overcome by increasing agonist concentration (parallel right shift of dose-response curve).\n\nPharmacokinetics: What the body does to the drug. ADME - Absorption, Distribution, Metabolism, Excretion. Bioavailability is the fraction of drug reaching systemic circulation. First-pass metabolism in liver reduces bioavailability of orally administered drugs. Half-life (t₁/₂) determines dosing interval. Volume of distribution relates drug dose to plasma concentration.\n\nDrug Interactions: Pharmacokinetic interactions affect ADME. Pharmacodynamic interactions are at receptor level. Synergism: combined effect greater than sum. Potentiation: one drug enhances effect of another.',
+   351→   351→        subjectId: subjects[7].id, collegeId: colleges[1].id, departmentId: departments[3].id, semester: 5,
+   352→   352→        uploaderId: users[1].id, fileType: 'pdf', fileSize: 3400000, downloadCount: 112, viewCount: 567, bookmarkCount: 38, avgRating: 4.3, ratingCount: 18,
+   353→   353→      },
+   354→   354→      {
+   355→   355→        title: 'Pathology - Cell Injury & Inflammation',
+   356→   356→        description: 'Notes covering causes of cell injury, necrosis, apoptosis, and inflammatory responses.',
+   357→   357→        extractedText: 'Cell Injury: Causes include hypoxia, toxins, infections, immunologic reactions, genetic defects, nutritional imbalances. Reversible injury shows cellular swelling and fatty change. Irreversible injury leads to necrosis or apoptosis.\n\nNecrosis vs Apoptosis: Necrosis is pathological, involves cell swelling, membrane rupture, and inflammation. Types: coagulative (most common, preserves tissue architecture), liquefactive (brain abscesses), caseous (tuberculosis), fat (pancreatitis), gangrenous. Apoptosis is programmed cell death, involves cell shrinkage, chromatin condensation, apoptotic bodies, no inflammation.\n\nInflammation: Acute inflammation - vascular response (vasodilation, increased permeability), cellular response (neutrophil migration). Chronic inflammation - lymphocytes, macrophages, fibrosis. Mediators: histamine, prostaglandins, leukotrienes, cytokines (IL-1, TNF-α).',
+   358→   358→        subjectId: subjects[8].id, collegeId: colleges[1].id, departmentId: departments[4].id, semester: 3,
+   359→   359→        uploaderId: users[1].id, fileType: 'pdf', fileSize: 2900000, downloadCount: 87, viewCount: 432, bookmarkCount: 28, avgRating: 4.1, ratingCount: 14,
+   360→   360→      },
+   361→   361→      {
+   362→   362→        title: 'Constitutional Law - Fundamental Rights',
+   363→   363→        description: 'Comprehensive analysis of Part III of the Indian Constitution - all fundamental rights explained.',
+   364→   364→        extractedText: 'Fundamental Rights (Part III, Articles 12-35): These are justiciable rights enforceable against the State. Article 12 defines State broadly to include government, parliament, local authorities, and statutory bodies.\n\nRight to Equality (Art 14-18): Art 14 - Equality before law and equal protection. Art 15 - Prohibition of discrimination on grounds of religion, race, caste, sex, place of birth. Art 16 - Equality of opportunity in public employment. Art 17 - Abolition of untouchability. Art 18 - Abolition of titles.\n\nRight to Freedom (Art 19-22): Art 19 guarantees six freedoms - speech, assembly, association, movement, residence, profession. Each is subject to reasonable restrictions. Art 21 - Right to life and personal liberty (expanded by judiciary to include right to privacy, education, health, etc.). Art 21A - Right to education (6-14 years).',
+   365→   365→        subjectId: subjects[9].id, collegeId: colleges[2].id, departmentId: departments[5].id, semester: 1,
+   366→   366→        uploaderId: users[2].id, fileType: 'pdf', fileSize: 2100000, downloadCount: 145, viewCount: 734, bookmarkCount: 42, avgRating: 4.4, ratingCount: 20,
+   367→   367→      },
+   368→   368→      {
+   369→   369→        title: 'Criminal Law - Indian Penal Code Essentials',
+   370→   370→        description: 'Key provisions of IPC covering offenses against person, property, and state.',
+   371→   371→        extractedText: 'Indian Penal Code (IPC) 1860: Substantive criminal law of India. Applies to all Indian citizens. Section 34 - Common intention. Section 120A/B - Criminal conspiracy.\n\nOffenses Against Person: Section 299-300 - Culpable homicide and murder (difference lies in intention and knowledge). Section 304 - Dowry death. Section 304A - Death by negligence. Section 307 - Attempt to murder. Section 319-338 - Hurt, grievous hurt. Section 354 - Assault or criminal force to woman with intent to outrage modesty. Section 375/376 - Rape (redefined after 2013 amendment and 2018 ordinance).\n\nOffenses Against Property: Section 378-382 - Theft. Section 390-402 - Robbery and dacoity. Section 403-404 - Criminal misappropriation. Section 405-409 - Criminal breach of trust. Section 415-420 - Cheating. Section 425-432 - Mischief.',
+   372→   372→        subjectId: subjects[10].id, collegeId: colleges[2].id, departmentId: departments[5].id, semester: 3,
+   373→   373→        uploaderId: users[2].id, fileType: 'docx', fileSize: 1800000, downloadCount: 98, viewCount: 512, bookmarkCount: 31, avgRating: 4.0, ratingCount: 12,
+   374→   374→      },
+   375→   375→      {
+   376→   376→        title: 'AI - Search Algorithms & Knowledge Representation',
+   377→   377→        description: 'Notes on uninformed and informed search strategies, heuristic functions, and knowledge representation methods.',
+   378→   378→        extractedText: 'Uninformed Search: BFS, DFS, Uniform Cost Search, Depth-Limited Search, Iterative Deepening. No heuristic information used. BFS is complete and optimal (unit cost). DFS is neither complete nor optimal.\n\nInformed Search: Uses heuristic function h(n) to estimate cost from n to goal. Greedy Best-First Search uses only h(n). A* Search uses f(n) = g(n) + h(n) where g(n) is cost from start. A* is optimal if h(n) is admissible (never overestimates). IDA* uses iterative deepening with A*.\n\nKnowledge Representation: Propositional logic (simple but limited expressiveness). First-Order Logic (quantifiers, predicates, functions). Semantic Networks (graph-based representation). Frames (structured objects with slots and fillers). Ontologies for shared understanding. Production rules (IF-THEN).',
+   379→   379→        subjectId: subjects[11].id, collegeId: colleges[3].id, departmentId: departments[6].id, semester: 7,
+   380→   380→        uploaderId: users[3].id, fileType: 'pdf', fileSize: 2700000, downloadCount: 178, viewCount: 890, bookmarkCount: 52, avgRating: 4.7, ratingCount: 35,
+   381→   381→      },
+   382→   382→      {
+   383→   383→        title: 'Linear Algebra - Matrices & Eigenvalues',
+   384→   384→        description: 'Complete coverage of matrix operations, determinants, eigenvalues, eigenvectors, and applications.',
+   385→   385→        extractedText: 'Matrix Operations: Addition (element-wise, same dimensions). Multiplication (inner dimensions must match). Transpose (rows become columns). Inverse exists for square non-singular matrices. Properties: (AB)ᵀ = BᵀAᵀ, (AB)⁻¹ = B⁻¹A⁻¹.\n\nDeterminants: Scalar value for square matrices. |A| ≠ 0 means invertible. Cofactor expansion along any row or column. Properties: |AB| = |A||B|, |Aᵀ| = |A|, |kA| = kⁿ|A| for n×n matrix.\n\nEigenvalues & Eigenvectors: Av = λv where λ is eigenvalue, v is eigenvector. Find by solving |A - λI| = 0 (characteristic equation). Eigenvectors corresponding to distinct eigenvalues are linearly independent. Diagonalization: A = PDP⁻¹ where D is diagonal matrix of eigenvalues. Applications: differential equations, principal component analysis, Google PageRank.',
+   386→   386→        subjectId: subjects[12].id, collegeId: colleges[3].id, departmentId: departments[7].id, semester: 3,
+   387→   387→        uploaderId: users[3].id, fileType: 'pdf', fileSize: 1900000, downloadCount: 134, viewCount: 678, bookmarkCount: 39, avgRating: 4.4, ratingCount: 22,
+   388→   388→      },
+   389→   389→      {
+   390→   390→        title: 'Deep Learning - CNNs and RNNs',
+   391→   391→        description: 'Notes on convolutional neural networks, recurrent neural networks, and their applications.',
+   392→   392→        extractedText: 'Convolutional Neural Networks (CNNs): Designed for grid-like data (images). Key layers: Convolution (feature extraction with learnable filters), Pooling (dimensionality reduction - max/average), Fully Connected (classification). Popular architectures: LeNet, AlexNet, VGGNet, ResNet (skip connections solve vanishing gradient), Inception (multi-scale features).\n\nRecurrent Neural Networks (RNNs): Designed for sequential data. Hidden state carries information from previous time steps. Problem: vanishing/exploding gradients. Solutions: LSTM (Long Short-Term Memory) with gates (forget, input, output), GRU (simpler than LSTM with reset and update gates). Bidirectional RNNs process sequences in both directions.\n\nApplications: CNNs - image classification, object detection (YOLO, SSD), segmentation (U-Net), style transfer. RNNs - language modeling, machine translation (seq2seq with attention), speech recognition, text generation.',
+   393→   393→        subjectId: subjects[2].id, collegeId: colleges[3].id, departmentId: departments[6].id, semester: 7,
+   394→   394→        uploaderId: users[3].id, fileType: 'pdf', fileSize: 4100000, downloadCount: 256, viewCount: 1450, bookmarkCount: 78, avgRating: 4.9, ratingCount: 48,
+   395→   395→      },
+   396→   396→      {
+   397→   397→        title: 'Python Programming for Data Science',
+   398→   398→        description: 'Essential Python libraries for data science: NumPy, Pandas, Matplotlib, Scikit-learn.',
+   399→   399→        extractedText: 'NumPy: Fundamental package for numerical computing. N-dimensional array object (ndarray). Vectorized operations (element-wise computation without loops). Broadcasting for operations on different-shaped arrays. Linear algebra: np.dot(), np.linalg.inv(), np.linalg.eig(). Random number generation.\n\nPandas: Data manipulation and analysis. DataFrame (2D labeled data structure) and Series (1D). Operations: filtering, grouping (groupby), merging (merge/join), reshaping (pivot/melt). Handling missing data: fillna(), dropna(). Time series: date_range, resample, rolling windows.\n\nMatplotlib & Seaborn: Data visualization. Line plots, bar charts, histograms, scatter plots, heatmaps. Customization: titles, labels, legends, subplots. Seaborn provides statistical visualization and attractive defaults.\n\nScikit-learn: Machine learning library. Unified API: fit(), predict(), transform(). Algorithms: LinearRegression, LogisticRegression, RandomForest, SVM, KMeans. Tools: train_test_split, cross_val_score, GridSearchCV, Pipeline.',
+   400→   400→        subjectId: subjects[2].id, collegeId: colleges[0].id, departmentId: departments[0].id, semester: 5,
+   401→   401→        uploaderId: users[0].id, fileType: 'pdf', fileSize: 2200000, downloadCount: 312, viewCount: 1560, bookmarkCount: 89, avgRating: 4.6, ratingCount: 38,
+   402→   402→      },
+   403→   403→      {
+   404→   404→        title: 'Computer Networks - TCP/IP & OSI Model',
+   405→   405→        description: 'Detailed comparison of TCP/IP and OSI models, protocols at each layer, and networking fundamentals.',
+   406→   406→        extractedText: 'OSI Model (7 layers): Physical (bit transmission), Data Link (framing, error detection - Ethernet, PPP), Network (routing - IP, ICMP), Transport (end-to-end - TCP, UDP), Session (dialog control), Presentation (data format, encryption), Application (user interface - HTTP, FTP, SMTP).\n\nTCP/IP Model (4 layers): Link, Internet, Transport, Application. TCP: connection-oriented, reliable, flow control (sliding window), congestion control (slow start, AIMD). Three-way handshake: SYN, SYN-ACK, ACK. UDP: connectionless, unreliable, low overhead, used for streaming, DNS.\n\nIP Addressing: IPv4 (32-bit, dotted decimal). Classes A-E. Subnetting with CIDR. NAT for address translation. IPv6 (128-bit, colon-hex). DHCP for automatic IP assignment. DNS resolves domain names to IP addresses. ARP resolves IP to MAC address.',
+   407→   407→        subjectId: subjects[1].id, collegeId: colleges[0].id, departmentId: departments[0].id, semester: 5,
+   408→   408→        uploaderId: users[0].id, fileType: 'pptx', fileSize: 5800000, downloadCount: 78, viewCount: 390, bookmarkCount: 25, avgRating: 3.9, ratingCount: 11,
+   409→   409→      },
+   410→   410→      {
+   411→   411→        title: 'Medical Physiology - Cardiovascular System',
+   412→   412→        description: 'Complete notes on heart anatomy, cardiac cycle, blood pressure regulation, and common cardiovascular disorders.',
+   413→   413→        extractedText: 'Heart Anatomy: Four chambers - right atrium, right ventricle, left atrium, left ventricle. Valves: tricuspid, pulmonary, mitral (bicuspid), aortic. Coronary circulation: left and right coronary arteries. Conduction system: SA node (pacemaker, 60-100 bpm), AV node (delay), Bundle of His, Purkinje fibers.\n\nCardiac Cycle: Atrial systole, isovolumetric contraction, ventricular ejection, isovolumetric relaxation, ventricular filling. Cardiac output = Heart rate × Stroke volume (normally ~5 L/min). Frank-Starling mechanism: increased preload increases stroke volume.\n\nBlood Pressure Regulation: Short-term - baroreceptor reflex, chemoreceptor reflex. Long-term - renin-angiotensin-aldosterone system (RAAS), ADH, atrial natriuretic peptide. Hypertension: sustained BP > 140/90 mmHg. Risk factors: obesity, salt intake, stress, genetics.',
+   414→   414→        subjectId: subjects[6].id, collegeId: colleges[1].id, departmentId: departments[3].id, semester: 2,
+   415→   415→        uploaderId: users[1].id, fileType: 'pdf', fileSize: 3800000, downloadCount: 143, viewCount: 710, bookmarkCount: 47, avgRating: 4.5, ratingCount: 25,
+   416→   416→      },
+   417→   417→      {
+   418→   418→        title: 'Legal Research Methodology',
+   419→   419→        description: 'Guide to legal research methods, citation formats, and case analysis techniques.',
+   420→   420→        extractedText: 'Legal Research Process: Identify the legal issue, determine jurisdiction, find relevant statutes and case law, analyze and synthesize sources, present findings. Primary sources: statutes, case law, regulations. Secondary sources: textbooks, journal articles, commentaries, digests.\n\nCase Analysis Method: IRAC - Issue, Rule, Application, Conclusion. Identify the legal question, state the relevant legal rule, apply the rule to the facts, reach a conclusion. Distinguish between ratio decidendi (binding) and obiter dicta (persuasive).\n\nCitation Format: Case citation - Party v. Party, Volume Reporter Page (Court Year). e.g., Kesavananda Bharati v. State of Kerala, AIR 1973 SC 1461. Statute citation - Short Title, Year, Section number. e.g., Constitution of India, 1950, Art. 21. Use SCC, AIR, SCALE for Indian case law.',
+   421→   421→        subjectId: subjects[9].id, collegeId: colleges[2].id, departmentId: departments[5].id, semester: 2,
+   422→   422→        uploaderId: users[2].id, fileType: 'pdf', fileSize: 1600000, downloadCount: 56, viewCount: 289, bookmarkCount: 18, avgRating: 3.7, ratingCount: 7,
+   423→   423→      },
+   424→   424→      {
+   425→   425→        title: 'Software Engineering - Agile & Design Patterns',
+   426→   426→        description: 'Notes on agile methodologies, Scrum framework, and common software design patterns.',
+   427→   427→        extractedText: 'Agile Methodology: Iterative and incremental development. Values: individuals over processes, working software over documentation, customer collaboration over negotiation, responding to change over following a plan. Scrum: Product Owner, Scrum Master, Development Team. Artifacts: Product Backlog, Sprint Backlog, Increment. Events: Sprint Planning, Daily Standup, Sprint Review, Sprint Retrospective.\n\nDesign Patterns: Creational - Singleton (one instance), Factory (object creation), Builder (complex object step-by-step). Structural - Adapter (interface compatibility), Decorator (add behavior dynamically), Facade (simplified interface). Behavioral - Observer (pub-sub), Strategy (interchangeable algorithms), Command (encapsulate request). SOLID principles: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion.',
+   428→   428→        subjectId: subjects[3].id, collegeId: colleges[3].id, departmentId: departments[6].id, semester: 6,
+   429→   429→        uploaderId: users[3].id, fileType: 'pdf', fileSize: 2400000, downloadCount: 167, viewCount: 823, bookmarkCount: 55, avgRating: 4.3, ratingCount: 19,
+   430→   430→      },
+   431→   431→    ];
+   432→   432→
+   433→   433→    const notes = await Promise.all(
+   434→   434→      noteData.map((data) =>
+   435→   435→        db.note.create({
+   436→   436→          data: {
+   437→   437→            ...data,
+   438→   438→            status: 'active',
+   439→   439→            isPublic: true,
+   440→   440→            qualityScore: data.avgRating * 20, // Simple quality score
+   441→   441→          },
+   442→   442→        })
+   443→   443→      )
+   444→   444→    );
+   445→   445→
+   446→   446→    // ============================================================
+   447→   447→    // 6. ADDITIONAL DATA - Tags, Achievements, Study Groups
+   448→   448→    // ============================================================
+   449→   449→
+   450→   450→    // Add tags to notes
+   451→   451→    const tagMap: Record<number, string[]> = {
+   452→   452→      0: ['dsa', 'trees', 'graphs', 'algorithms'],
+   453→   453→      1: ['os', 'synchronization', 'deadlock'],
+   454→   454→      2: ['ml', 'neural-networks', 'python'],
+   455→   455→      3: ['dbms', 'sql', 'normalization'],
+   456→   456→      4: ['signals', 'fourier', 'dsp'],
+   457→   457→      5: ['thermodynamics', 'physics', 'engineering'],
+   458→   458→      6: ['anatomy', 'medical', 'musculoskeletal'],
+   459→   459→      7: ['pharmacology', 'drugs', 'medical'],
+   460→   460→      8: ['pathology', 'cell-injury', 'inflammation'],
+   461→   461→      9: ['constitutional-law', 'fundamental-rights', 'indian-constitution'],
+   462→   462→      10: ['criminal-law', 'ipc', 'legal'],
+   463→   463→      11: ['ai', 'search-algorithms', 'knowledge-representation'],
+   464→   464→      12: ['linear-algebra', 'matrices', 'eigenvalues'],
+   465→   465→      13: ['deep-learning', 'cnn', 'rnn'],
+   466→   466→      14: ['python', 'data-science', 'numpy'],
+   467→   467→      15: ['computer-networks', 'tcp-ip', 'osi'],
+   468→   468→      16: ['physiology', 'cardiovascular', 'medical'],
+   469→   469→      17: ['legal-research', 'methodology', 'citation'],
+   470→   470→      18: ['software-engineering', 'agile', 'design-patterns'],
+   471→   471→    };
+   472→   472→
+   473→   473→    const tagPromises: Promise<unknown>[] = [];
+   474→   474→    for (const [index, tags] of Object.entries(tagMap)) {
+   475→   475→      const noteId = notes[parseInt(index)]?.id;
+   476→   476→      if (noteId) {
+   477→   477→        tags.forEach((tag) => {
+   478→   478→          tagPromises.push(
+   479→   479→            db.noteTag.create({ data: { noteId, tag } })
+   480→   480→          );
+   481→   481→        });
+   482→   482→      }
+   483→   483→    }
+   484→   484→    await Promise.all(tagPromises);
+   485→   485→
+   486→   486→    // Create achievements
+   487→   487→    const achievements = await Promise.all([
+   488→   488→      db.achievement.create({
+   489→   489→        data: { name: 'First Upload', description: 'Upload your first note', icon: '📝', category: 'upload', threshold: 1 },
+   490→   490→      }),
+   491→   491→      db.achievement.create({
+   492→   492→        data: { name: 'Prolific Author', description: 'Upload 10 notes', icon: '📚', category: 'upload', threshold: 10 },
+   493→   493→      }),
+   494→   494→      db.achievement.create({
+   495→   495→        data: { name: 'Helpful Contributor', description: 'Receive 50 downloads', icon: '🌟', category: 'social', threshold: 50 },
+   496→   496→      }),
+   497→   497→      db.achievement.create({
+   498→   498→        data: { name: 'Rising Star', description: 'Reach 100 reputation', icon: '⭐', category: 'academic', threshold: 100 },
+   499→   499→      }),
+   500→   500→      db.achievement.create({
+
+[showing lines 1-500 of 623; use offset=501 with limit to continue reading]

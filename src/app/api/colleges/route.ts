@@ -10,8 +10,8 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const state = searchParams.get('state');
     const country = searchParams.get('country');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '20') || 20));
 
     const where: Record<string, unknown> = {};
     if (q.trim()) where.name = { contains: q.trim() };

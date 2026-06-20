@@ -10,8 +10,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '12');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '12') || 12));
     const subjectId = searchParams.get('subjectId');
     const collegeId = searchParams.get('collegeId');
     const departmentId = searchParams.get('departmentId');
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     if (subjectId) where.subjectId = subjectId;
     if (collegeId) where.collegeId = collegeId;
     if (departmentId) where.departmentId = departmentId;
-    if (semester) where.semester = parseInt(semester);
+    if (semester) { const s = parseInt(semester); if (!isNaN(s)) where.semester = s; }
     if (uploaderId) where.uploaderId = uploaderId;
 
     const orderBy: Record<string, string> = {};

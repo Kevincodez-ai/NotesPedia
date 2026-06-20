@@ -32,6 +32,9 @@ import {
   XCircle,
   Trophy,
   FileText,
+  Pencil,
+  Trash2,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,9 +43,35 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
 import type { NoteDetail, CommentData, FlashcardData, MCQData } from '@/types';
 import { toast } from 'sonner';
 import { formatRelativeTime as formatRelativeTimeBase } from '@/components/features/note-card';
@@ -463,7 +492,73 @@ function CommentItem({
   setReplyText: (text: string) => void;
   commentMutation: ReturnType<typeof useMutation>;
 }) {
+  const queryClient = useQueryClient();
+  const { user } = useAppStore();
   const isReplying = replyingTo === comment.id;
+
+  // Edit comment state
+  const [editingComment, setEditingComment] = useState(false);
+  const [editContent, setEditContent] = useState('');
+
+  // Delete confirmation state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const isCommentOwner = user?.id === comment.user.id;
+  const isAdminOrModerator = user ? ['admin', 'super_admin', 'moderator'].includes(user.role) : false;
+  const canModifyComment = isCommentOwner || isAdminOrModerator;
+
+  // Edit comment mutation
+  const editCommentMutation = useMutation({
+    mutationFn: async ({ commentId, content }: { commentId: string; content: string }) => {
+      const res = await fetch('/api/comments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, content }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to edit comment');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+      setEditingComment(false);
+      setEditContent('');
+      toast.success('Comment updated');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  // Delete comment mutation
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: string) => {
+      const res = await fetch(`/api/comments?commentId=${commentId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete comment');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+      setDeleteDialogOpen(false);
+      toast.success('Comment deleted');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const handleStartEdit = () => {
+    setEditContent(comment.content);
+    setEditingComment(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editContent.trim()) return;
+    editCommentMutation.mutate({ commentId: comment.id, content: editContent.trim() });
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -482,15 +577,74 @@ function CommentItem({
                 <span className="text-[10px] text-muted-foreground">{formatRelativeTime(comment.createdAt)}</span>
                 {comment.isEdited && <span className="text-[10px] text-muted-foreground">(edited)</span>}
               </div>
-              <p className="text-sm text-foreground/90 mt-1 leading-relaxed">{comment.content}</p>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-1 h-6 text-[11px] text-muted-foreground gap-1 px-0"
-                onClick={() => setReplyingTo(isReplying ? null : comment.id)}
-              >
-                <MessageSquare className="size-3" /> Reply
-              </Button>
+
+              {editingComment ? (
+                <div className="mt-2 space-y-2">
+                  <Textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="min-h-[60px] resize-none text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={!editContent.trim() || editCommentMutation.isPending}
+                      onClick={handleSaveEdit}
+                      className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white h-7 text-xs"
+                    >
+                      {editCommentMutation.isPending ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => { setEditingComment(false); setEditContent(''); }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground/90 mt-1 leading-relaxed">{comment.content}</p>
+              )}
+
+              {!editingComment && (
+                <div className="flex items-center gap-2 mt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[11px] text-muted-foreground gap-1 px-0"
+                    onClick={() => setReplyingTo(isReplying ? null : comment.id)}
+                  >
+                    <MessageSquare className="size-3" /> Reply
+                  </Button>
+
+                  {canModifyComment && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-6 text-[11px] text-muted-foreground gap-1 px-0">
+                          <MoreHorizontal className="size-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {isCommentOwner && (
+                          <DropdownMenuItem onClick={handleStartEdit}>
+                            <Pencil className="size-3.5 mr-2" />
+                            Edit Comment
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteDialogOpen(true)}
+                        >
+                          <Trash2 className="size-3.5 mr-2" />
+                          Delete Comment
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              )}
 
               {/* Reply form */}
               {isReplying && (
@@ -519,21 +673,7 @@ function CommentItem({
               {comment.replies && comment.replies.length > 0 && (
                 <div className="mt-3 pl-4 border-l-2 border-muted space-y-3">
                   {comment.replies.map((reply) => (
-                    <div key={reply.id} className="flex items-start gap-2">
-                      <Avatar className="size-6 shrink-0">
-                        {reply.user.avatarUrl && <AvatarImage src={reply.user.avatarUrl} />}
-                        <AvatarFallback className="text-[9px] bg-muted">
-                          {reply.user.name.charAt(0)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium">{reply.user.name}</span>
-                          <span className="text-[10px] text-muted-foreground">{formatRelativeTime(reply.createdAt)}</span>
-                        </div>
-                        <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">{reply.content}</p>
-                      </div>
-                    </div>
+                    <ReplyItem key={reply.id} reply={reply} noteId={noteId} />
                   ))}
                 </div>
               )}
@@ -541,7 +681,180 @@ function CommentItem({
           </div>
         </CardContent>
       </Card>
+
+      {/* Delete Comment Confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Comment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this comment? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteCommentMutation.isPending}
+              onClick={() => deleteCommentMutation.mutate(comment.id)}
+            >
+              {deleteCommentMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
+  );
+}
+
+// ── Reply Item with edit/delete ─────────────────────────────────
+function ReplyItem({ reply, noteId }: { reply: CommentData; noteId: string }) {
+  const queryClient = useQueryClient();
+  const { user } = useAppStore();
+
+  const [editingReply, setEditingReply] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const isReplyOwner = user?.id === reply.user.id;
+  const isAdminOrModerator = user ? ['admin', 'super_admin', 'moderator'].includes(user.role) : false;
+  const canModifyReply = isReplyOwner || isAdminOrModerator;
+
+  const editReplyMutation = useMutation({
+    mutationFn: async ({ commentId, content }: { commentId: string; content: string }) => {
+      const res = await fetch('/api/comments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, content }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to edit reply');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+      setEditingReply(false);
+      setEditContent('');
+      toast.success('Reply updated');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteReplyMutation = useMutation({
+    mutationFn: async (commentId: string) => {
+      const res = await fetch(`/api/comments?commentId=${commentId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete reply');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+      setDeleteDialogOpen(false);
+      toast.success('Reply deleted');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  return (
+    <>
+      <div className="flex items-start gap-2">
+        <Avatar className="size-6 shrink-0">
+          {reply.user.avatarUrl && <AvatarImage src={reply.user.avatarUrl} />}
+          <AvatarFallback className="text-[9px] bg-muted">
+            {reply.user.name.charAt(0)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium">{reply.user.name}</span>
+            <span className="text-[10px] text-muted-foreground">{formatRelativeTime(reply.createdAt)}</span>
+            {reply.isEdited && <span className="text-[10px] text-muted-foreground">(edited)</span>}
+            {canModifyReply && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-5 ml-1">
+                    <MoreHorizontal className="size-3 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {isReplyOwner && (
+                    <DropdownMenuItem onClick={() => { setEditContent(reply.content); setEditingReply(true); }}>
+                      <Pencil className="size-3.5 mr-2" />
+                      Edit Reply
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="size-3.5 mr-2" />
+                    Delete Reply
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          {editingReply ? (
+            <div className="mt-1 space-y-1.5">
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="min-h-[40px] resize-none text-xs"
+              />
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  disabled={!editContent.trim() || editReplyMutation.isPending}
+                  onClick={() => editReplyMutation.mutate({ commentId: reply.id, content: editContent.trim() })}
+                  className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white h-6 text-[10px] px-2"
+                >
+                  {editReplyMutation.isPending ? 'Saving...' : 'Save'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => { setEditingReply(false); setEditContent(''); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">{reply.content}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Delete Reply Confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Reply</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this reply? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteReplyMutation.isPending}
+              onClick={() => deleteReplyMutation.mutate(reply.id)}
+            >
+              {deleteReplyMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -653,6 +966,18 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
   const { navigate, user } = useAppStore();
   const queryClient = useQueryClient();
 
+  // Edit note dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    tags: '',
+    isPublic: true,
+  });
+
+  // Delete note dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
   // Fetch note detail
   const { data, isLoading, isError } = useQuery({
     queryKey: ['note', noteId],
@@ -683,6 +1008,55 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
     },
   });
 
+  // Edit note mutation
+  const editNoteMutation = useMutation({
+    mutationFn: async (formData: typeof editForm) => {
+      const res = await fetch(`/api/notes/${noteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title.trim(),
+          description: formData.description.trim() || null,
+          tags: formData.tags ? formData.tags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
+          isPublic: formData.isPublic,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update note');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+      setEditDialogOpen(false);
+      toast.success('Note updated successfully');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  // Delete note mutation
+  const deleteNoteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/notes/${noteId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete note');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success('Note deleted successfully');
+      navigate('notes');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const isNoteOwner = user?.id === note?.uploader?.id;
+  const isAdminOrModerator = user ? ['admin', 'super_admin', 'moderator'].includes(user.role) : false;
+
   if (isLoading) return <DetailSkeleton />;
 
   if (isError || !note) {
@@ -701,6 +1075,16 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
   }
 
   const isBookmarked = note.isBookmarked ?? false;
+
+  const handleOpenEdit = () => {
+    setEditForm({
+      title: note.title,
+      description: note.description || '',
+      tags: note.tags.join(', '),
+      isPublic: note.isPublic,
+    });
+    setEditDialogOpen(true);
+  };
 
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
@@ -807,6 +1191,26 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
           }}>
             <Share2 className="size-4" /> Share
           </Button>
+
+          {/* Edit & Delete - only for owner or admin/moderator */}
+          {(isNoteOwner || isAdminOrModerator) && (
+            <>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleOpenEdit}
+              >
+                <Pencil className="size-4" /> Edit
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2 text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="size-4" /> Delete
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Rating */}
@@ -907,6 +1311,80 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
           </TabsContent>
         </Tabs>
       </motion.div>
+
+      {/* ── Edit Note Dialog ────────────────────────── */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Note</DialogTitle>
+            <DialogDescription>
+              Update your note details. Changes will create a new version.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-note-title">Title *</Label>
+              <Input
+                id="edit-note-title"
+                value={editForm.title}
+                onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
+                placeholder="Note title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-note-desc">Description</Label>
+              <Textarea
+                id="edit-note-desc"
+                value={editForm.description}
+                onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
+                placeholder="Brief description of the note"
+                className="min-h-[80px] resize-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-note-tags">Tags (comma-separated)</Label>
+              <Input
+                id="edit-note-tags"
+                value={editForm.tags}
+                onChange={(e) => setEditForm((p) => ({ ...p, tags: e.target.value }))}
+                placeholder="e.g., machine-learning, python, algorithms"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={!editForm.title.trim() || editNoteMutation.isPending}
+              onClick={() => editNoteMutation.mutate(editForm)}
+            >
+              {editNoteMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Note Confirmation ────────────────── */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{note.title}&quot;? This action cannot be undone. The note will be soft-deleted and removed from public view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteNoteMutation.isPending}
+              onClick={() => deleteNoteMutation.mutate()}
+            >
+              {deleteNoteMutation.isPending ? 'Deleting...' : 'Delete Note'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

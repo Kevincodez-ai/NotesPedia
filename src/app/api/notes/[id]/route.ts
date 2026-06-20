@@ -2,6 +2,144 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
 
+// PUT - Update a note
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    const { title, description, subjectId, collegeId, departmentId, semester, tags, isPublic } = body;
+
+    // Fetch existing note
+    const existingNote = await db.note.findUnique({ where: { id } });
+    if (!existingNote) {
+      return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
+    }
+
+    // Only owner or admin can edit
+    if (existingNote.uploaderId !== user.id && !['admin', 'super_admin', 'moderator'].includes(user.role)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    // Build update data
+    const updateData: Record<string, unknown> = {};
+    if (title !== undefined) updateData.title = title.trim();
+    if (description !== undefined) updateData.description = description?.trim() || null;
+    if (subjectId !== undefined) updateData.subjectId = subjectId || null;
+    if (collegeId !== undefined) updateData.collegeId = collegeId || null;
+    if (departmentId !== undefined) updateData.departmentId = departmentId || null;
+    if (semester !== undefined) updateData.semester = semester || null;
+    if (isPublic !== undefined) updateData.isPublic = isPublic;
+
+    // Handle tags: delete existing and create new ones
+    if (tags !== undefined) {
+      await db.noteTag.deleteMany({ where: { noteId: id } });
+      if (Array.isArray(tags) && tags.length > 0) {
+        updateData.tags = {
+          create: tags.map((tag: string) => ({ tag: tag.trim() })),
+        };
+      }
+    }
+
+    // Increment version
+    updateData.version = existingNote.version + 1;
+
+    // Create a version record
+    await db.noteVersion.create({
+      data: {
+        noteId: id,
+        version: existingNote.version + 1,
+        filePath: existingNote.filePath,
+        changeLog: `Updated note`,
+      },
+    });
+
+    const updatedNote = await db.note.update({
+      where: { id },
+      data: updateData,
+      include: {
+        uploader: { select: { id: true, name: true, avatarUrl: true } },
+        subject: { select: { id: true, name: true } },
+        college: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
+        tags: { select: { tag: true } },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      note: {
+        id: updatedNote.id,
+        title: updatedNote.title,
+        description: updatedNote.description,
+        subject: updatedNote.subject,
+        college: updatedNote.college,
+        department: updatedNote.department,
+        semester: updatedNote.semester,
+        version: updatedNote.version,
+        isPublic: updatedNote.isPublic,
+        tags: updatedNote.tags.map((t) => t.tag),
+        updatedAt: updatedNote.updatedAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Note update error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to update note' }, { status: 500 });
+  }
+}
+
+// DELETE - Soft delete a note
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    const note = await db.note.findUnique({ where: { id } });
+    if (!note) {
+      return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
+    }
+
+    // Only owner or admin can delete
+    if (note.uploaderId !== user.id && !['admin', 'super_admin', 'moderator'].includes(user.role)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    // Soft delete: set status to 'removed'
+    await db.note.update({
+      where: { id },
+      data: { status: 'removed' },
+    });
+
+    // Decrement uploader's uploadCount and contributionScore
+    await db.profile.update({
+      where: { userId: note.uploaderId },
+      data: {
+        uploadCount: { decrement: 1 },
+        contributionScore: { decrement: 10 },
+      },
+    });
+
+    return NextResponse.json({ success: true, message: 'Note deleted successfully' });
+  } catch (error) {
+    console.error('Note delete error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete note' }, { status: 500 });
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

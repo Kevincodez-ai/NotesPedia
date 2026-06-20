@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
     const collegeId = searchParams.get('collegeId');
     const departmentId = searchParams.get('departmentId');
     const semester = searchParams.get('semester');
+    const q = searchParams.get('q');
+    const fileType = searchParams.get('fileType');
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const uploaderId = searchParams.get('uploaderId');
     const status = searchParams.get('status') || 'active';
@@ -26,6 +28,13 @@ export async function GET(request: NextRequest) {
     if (departmentId) where.departmentId = departmentId;
     if (semester) { const s = parseInt(semester); if (!isNaN(s)) where.semester = s; }
     if (uploaderId) where.uploaderId = uploaderId;
+    if (fileType) where.fileType = fileType;
+    if (q) {
+      where.OR = [
+        { title: { contains: q } },
+        { description: { contains: q } },
+      ];
+    }
 
     const orderBy: Record<string, string> = {};
     if (sortBy === 'downloads') orderBy.downloadCount = 'desc';

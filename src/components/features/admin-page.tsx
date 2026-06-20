@@ -100,25 +100,62 @@ async function fetchAdminStats() {
 }
 
 async function fetchAdminUsers(params: string) {
-  const res = await fetch(`/api/admin/users?${params}`);
+  const parsed = Object.fromEntries(new URLSearchParams(params));
+  const body: Record<string, unknown> = { action: 'listUsers' };
+  if (parsed.page) body.page = parseInt(parsed.page);
+  if (parsed.limit) body.limit = parseInt(parsed.limit);
+  if (parsed.q) body.q = parsed.q;
+  if (parsed.role && parsed.role !== 'all') body.role = parsed.role;
+  const res = await fetch('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error('Failed to fetch users');
   return res.json();
 }
 
 async function fetchAdminNotes(params: string) {
-  const res = await fetch(`/api/admin/notes?${params}`);
+  const parsed = Object.fromEntries(new URLSearchParams(params));
+  const body: Record<string, unknown> = { action: 'listNotes' };
+  if (parsed.page) body.page = parseInt(parsed.page);
+  if (parsed.limit) body.limit = parseInt(parsed.limit);
+  if (parsed.status && parsed.status !== 'all') body.status = parsed.status;
+  const res = await fetch('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error('Failed to fetch notes');
   return res.json();
 }
 
 async function fetchAdminReports(params: string) {
-  const res = await fetch(`/api/admin/reports?${params}`);
+  const parsed = Object.fromEntries(new URLSearchParams(params));
+  const body: Record<string, unknown> = { action: 'listReports' };
+  if (parsed.page) body.page = parseInt(parsed.page);
+  if (parsed.limit) body.limit = parseInt(parsed.limit);
+  if (parsed.status && parsed.status !== 'all') body.status = parsed.status;
+  const res = await fetch('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error('Failed to fetch reports');
   return res.json();
 }
 
 async function fetchAdminColleges(params: string) {
-  const res = await fetch(`/api/admin/colleges?${params}`);
+  const parsed = Object.fromEntries(new URLSearchParams(params));
+  const body: Record<string, unknown> = { action: 'listColleges' };
+  if (parsed.page) body.page = parseInt(parsed.page);
+  if (parsed.limit) body.limit = parseInt(parsed.limit);
+  if (parsed.q) body.q = parsed.q;
+  const res = await fetch('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error('Failed to fetch colleges');
   return res.json();
 }
@@ -237,7 +274,7 @@ export function AdminPage() {
   const [activeTab, setActiveTab] = useState('overview');
 
   // Gate access
-  if (!user || !['admin', 'super_admin'].includes(user.role)) {
+  if (!user || !['admin', 'super_admin', 'moderator'].includes(user.role)) {
     return <AccessDenied />;
   }
 

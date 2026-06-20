@@ -47,7 +47,6 @@ export type PageName =
   | 'notifications'
   | 'leaderboard'
   | 'search'
-  | 'study-groups'
   | 'admin'
   | 'settings'
   | 'features'
@@ -217,7 +216,7 @@ export interface AchievementData {
   unlockedAt: string;
 }
 
-// Study Group Types
+// Study Group Types (kept for Prisma schema compatibility)
 export interface StudyGroupData {
   id: string;
   name: string;

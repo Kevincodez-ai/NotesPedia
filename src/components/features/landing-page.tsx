@@ -76,11 +76,11 @@ const features = [
   },
 ];
 
-const stats = [
-  { value: '10K+', label: 'Students', icon: Users },
-  { value: '50K+', label: 'Notes', icon: FileText },
-  { value: '500+', label: 'Colleges', icon: Building2 },
-  { value: '100+', label: 'Subjects', icon: BookMarked },
+const defaultStats = [
+  { value: '...', label: 'Students', icon: Users },
+  { value: '...', label: 'Notes', icon: FileText },
+  { value: '...', label: 'Colleges', icon: Building2 },
+  { value: '...', label: 'Subjects', icon: BookMarked },
 ];
 
 const footerLinks = {
@@ -92,6 +92,28 @@ const footerLinks = {
 
 export function LandingPage() {
   const { isAuthenticated, navigate } = useAppStore();
+
+  // Fetch dynamic stats
+  const [stats, setStats] = React.useState(defaultStats);
+  React.useEffect(() => {
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/admin');
+        const data = await res.json();
+        if (data.success && data.stats) {
+          setStats([
+            { value: data.stats.totalUsers.toLocaleString() + '+', label: 'Students', icon: Users },
+            { value: data.stats.totalNotes.toLocaleString() + '+', label: 'Notes', icon: FileText },
+            { value: data.stats.totalColleges.toLocaleString() + '+', label: 'Colleges', icon: Building2 },
+            { value: data.stats.totalSubjects.toLocaleString() + '+', label: 'Subjects', icon: BookMarked },
+          ]);
+        }
+      } catch {
+        // keep default stats
+      }
+    }
+    loadStats();
+  }, []);
 
   const handleGetStarted = () => {
     if (isAuthenticated) {

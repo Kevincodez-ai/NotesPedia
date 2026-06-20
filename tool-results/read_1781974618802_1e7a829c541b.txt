@@ -1,0 +1,1553 @@
+     1→'use client';
+     2→
+     3→import React, { useState } from 'react';
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/store/app-store';
+     6→import { motion } from 'framer-motion';
+     7→import {
+     8→  Shield,
+     9→  Users,
+    10→  FileText,
+    11→  Download,
+    12→  GraduationCap,
+    13→  AlertTriangle,
+    14→  Activity,
+    15→  Search,
+    16→  Ban,
+    17→  CheckCircle2,
+    18→  ArrowUpRight,
+    19→  Flag,
+    20→  Trash2,
+    21→  Star,
+    22→  Eye,
+    23→  Plus,
+    24→  MoreHorizontal,
+    25→  RefreshCw,
+    26→  X,
+    27→  ChevronLeft,
+    28→  ChevronRight,
+    29→  Pencil,
+    30→  UserCog,
+    31→  ToggleLeft,
+    32→  ToggleRight,
+    33→} from 'lucide-react';
+    34→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    35→import { Button } from '@/components/ui/button';
+    36→import { Badge } from '@/components/ui/badge';
+    37→import { Skeleton } from '@/components/ui/skeleton';
+    38→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    39→import { Input } from '@/components/ui/input';
+    40→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    41→import {
+    42→  Table,
+    43→  TableBody,
+    44→  TableCell,
+    45→  TableHead,
+    46→  TableHeader,
+    47→  TableRow,
+    48→} from '@/components/ui/table';
+    49→import {
+    50→  Select,
+    51→  SelectContent,
+    52→  SelectItem,
+    53→  SelectTrigger,
+    54→  SelectValue,
+    55→} from '@/components/ui/select';
+    56→import {
+    57→  Dialog,
+    58→  DialogContent,
+    59→  DialogDescription,
+    60→  DialogFooter,
+    61→  DialogHeader,
+    62→  DialogTitle,
+    63→} from '@/components/ui/dialog';
+    64→import {
+    65→  AlertDialog,
+    66→  AlertDialogAction,
+    67→  AlertDialogCancel,
+    68→  AlertDialogContent,
+    69→  AlertDialogDescription,
+    70→  AlertDialogFooter,
+    71→  AlertDialogHeader,
+    72→  AlertDialogTitle,
+    73→} from '@/components/ui/alert-dialog';
+    74→import {
+    75→  DropdownMenu,
+    76→  DropdownMenuContent,
+    77→  DropdownMenuItem,
+    78→  DropdownMenuTrigger,
+    79→} from '@/components/ui/dropdown-menu';
+    80→import { Label } from '@/components/ui/label';
+    81→import { Textarea } from '@/components/ui/textarea';
+    82→import { toast } from 'sonner';
+    83→import type { AdminStats, CollegeData } from '@/types';
+    84→
+    85→// ── Animation variants ──────────────────────────────────────────
+    86→const container = {
+    87→  hidden: { opacity: 0 },
+    88→  show: { opacity: 1, transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
+    89→};
+    90→const item = {
+    91→  hidden: { opacity: 0, y: 16 },
+    92→  show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
+    93→};
+    94→
+    95→// ── Fetchers ────────────────────────────────────────────────────
+    96→async function fetchAdminStats() {
+    97→  const res = await fetch('/api/admin');
+    98→  if (!res.ok) throw new Error('Failed to fetch admin stats');
+    99→  return res.json();
+   100→}
+   101→
+   102→async function fetchAdminUsers(params: string) {
+   103→  const res = await fetch(`/api/admin/users?${params}`);
+   104→  if (!res.ok) throw new Error('Failed to fetch users');
+   105→  return res.json();
+   106→}
+   107→
+   108→async function fetchAdminNotes(params: string) {
+   109→  const res = await fetch(`/api/admin/notes?${params}`);
+   110→  if (!res.ok) throw new Error('Failed to fetch notes');
+   111→  return res.json();
+   112→}
+   113→
+   114→async function fetchAdminReports(params: string) {
+   115→  const res = await fetch(`/api/admin/reports?${params}`);
+   116→  if (!res.ok) throw new Error('Failed to fetch reports');
+   117→  return res.json();
+   118→}
+   119→
+   120→async function fetchAdminColleges(params: string) {
+   121→  const res = await fetch(`/api/admin/colleges?${params}`);
+   122→  if (!res.ok) throw new Error('Failed to fetch colleges');
+   123→  return res.json();
+   124→}
+   125→
+   126→async function adminPostAction(body: Record<string, unknown>) {
+   127→  const res = await fetch('/api/admin', {
+   128→    method: 'POST',
+   129→    headers: { 'Content-Type': 'application/json' },
+   130→    body: JSON.stringify(body),
+   131→  });
+   132→  const data = await res.json().catch(() => ({}));
+   133→  if (!res.ok) {
+   134→    throw new Error(data.error || 'Action failed');
+   135→  }
+   136→  return data;
+   137→}
+   138→
+   139→// ── Stat Card ───────────────────────────────────────────────────
+   140→function StatCard({
+   141→  title,
+   142→  value,
+   143→  icon: Icon,
+   144→  subtitle,
+   145→  color,
+   146→}: {
+   147→  title: string;
+   148→  value: number | string;
+   149→  icon: React.ElementType;
+   150→  subtitle?: string;
+   151→  color: string;
+   152→}) {
+   153→  return (
+   154→    <motion.div variants={item}>
+   155→      <Card className="relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
+   156→        <CardContent className="p-5">
+   157→          <div className="flex items-start justify-between">
+   158→            <div className="space-y-1">
+   159→              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
+   160→              <p className="text-2xl font-bold tracking-tight">{value}</p>
+   161→              {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+   162→            </div>
+   163→            <div className={`rounded-xl p-2.5 ${color}`}>
+   164→              <Icon className="size-5 text-white" />
+   165→            </div>
+   166→          </div>
+   167→        </CardContent>
+   168→      </Card>
+   169→    </motion.div>
+   170→  );
+   171→}
+   172→
+   173→// ── Access Denied ───────────────────────────────────────────────
+   174→function AccessDenied() {
+   175→  return (
+   176→    <motion.div
+   177→      initial={{ opacity: 0, y: 20 }}
+   178→      animate={{ opacity: 1, y: 0 }}
+   179→      className="flex flex-col items-center justify-center min-h-[60vh] text-center"
+   180→    >
+   181→      <div className="rounded-2xl bg-destructive/10 p-6 mb-6">
+   182→        <Shield className="size-12 text-destructive" />
+   183→      </div>
+   184→      <h1 className="text-2xl font-bold">Access Denied</h1>
+   185→      <p className="text-muted-foreground mt-2 max-w-md">
+   186→        You don&apos;t have permission to access the admin panel. This area is restricted to administrators only.
+   187→      </p>
+   188→      <Button
+   189→        variant="outline"
+   190→        className="mt-6 gap-2"
+   191→        onClick={() => useAppStore.getState().navigate('dashboard')}
+   192→      >
+   193→        Back to Dashboard
+   194→      </Button>
+   195→    </motion.div>
+   196→  );
+   197→}
+   198→
+   199→// ── Loading Skeleton ────────────────────────────────────────────
+   200→function StatsSkeleton() {
+   201→  return (
+   202→    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+   203→      {Array.from({ length: 6 }).map((_, i) => (
+   204→        <Card key={i} className="border-0 shadow-sm">
+   205→          <CardContent className="p-5">
+   206→            <div className="flex items-start justify-between">
+   207→              <div className="space-y-2 flex-1">
+   208→                <Skeleton className="h-3 w-20" />
+   209→                <Skeleton className="h-7 w-12" />
+   210→              </div>
+   211→              <Skeleton className="size-10 rounded-xl" />
+   212→            </div>
+   213→          </CardContent>
+   214→        </Card>
+   215→      ))}
+   216→    </div>
+   217→  );
+   218→}
+   219→
+   220→function TableSkeleton({ cols = 5 }: { cols?: number }) {
+   221→  return (
+   222→    <div className="space-y-2">
+   223→      {Array.from({ length: 5 }).map((_, i) => (
+   224→        <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-muted/30">
+   225→          {Array.from({ length: cols }).map((_, j) => (
+   226→            <Skeleton key={j} className="h-4 flex-1" />
+   227→          ))}
+   228→        </div>
+   229→      ))}
+   230→    </div>
+   231→  );
+   232→}
+   233→
+   234→// ── Main Admin Page ─────────────────────────────────────────────
+   235→export function AdminPage() {
+   236→  const { user } = useAppStore();
+   237→  const [activeTab, setActiveTab] = useState('overview');
+   238→
+   239→  // Gate access
+   240→  if (!user || !['admin', 'super_admin'].includes(user.role)) {
+   241→    return <AccessDenied />;
+   242→  }
+   243→
+   244→  return (
+   245→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+   246→      {/* ── Header ─────────────────────────────────── */}
+   247→      <motion.div
+   248→        initial={{ opacity: 0, y: -10 }}
+   249→        animate={{ opacity: 1, y: 0 }}
+   250→        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+   251→      >
+   252→        <div>
+   253→          <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+   254→            <Shield className="size-7 text-emerald-600" />
+   255→            Admin Dashboard
+   256→          </h1>
+   257→          <p className="text-sm text-muted-foreground mt-0.5">
+   258→            Manage users, notes, reports, and platform settings
+   259→          </p>
+   260→        </div>
+   261→      </motion.div>
+   262→
+   263→      {/* ── Tabs ───────────────────────────────────── */}
+   264→      <Tabs value={activeTab} onValueChange={setActiveTab}>
+   265→        <TabsList className="bg-muted/50">
+   266→          <TabsTrigger value="overview" className="text-xs gap-1.5">
+   267→            <Activity className="size-3.5" /> Overview
+   268→          </TabsTrigger>
+   269→          <TabsTrigger value="users" className="text-xs gap-1.5">
+   270→            <Users className="size-3.5" /> Users
+   271→          </TabsTrigger>
+   272→          <TabsTrigger value="notes" className="text-xs gap-1.5">
+   273→            <FileText className="size-3.5" /> Notes
+   274→          </TabsTrigger>
+   275→          <TabsTrigger value="reports" className="text-xs gap-1.5">
+   276→            <AlertTriangle className="size-3.5" /> Reports
+   277→          </TabsTrigger>
+   278→          <TabsTrigger value="colleges" className="text-xs gap-1.5">
+   279→            <GraduationCap className="size-3.5" /> Colleges
+   280→          </TabsTrigger>
+   281→        </TabsList>
+   282→
+   283→        <TabsContent value="overview" className="mt-6 space-y-6">
+   284→          <OverviewTab onTabChange={setActiveTab} />
+   285→        </TabsContent>
+   286→        <TabsContent value="users" className="mt-6">
+   287→          <UsersTab />
+   288→        </TabsContent>
+   289→        <TabsContent value="notes" className="mt-6">
+   290→          <NotesTab />
+   291→        </TabsContent>
+   292→        <TabsContent value="reports" className="mt-6">
+   293→          <ReportsTab />
+   294→        </TabsContent>
+   295→        <TabsContent value="colleges" className="mt-6">
+   296→          <CollegesTab />
+   297→        </TabsContent>
+   298→      </Tabs>
+   299→    </div>
+   300→  );
+   301→}
+   302→
+   303→// ── Overview Tab ────────────────────────────────────────────────
+   304→function OverviewTab({ onTabChange }: { onTabChange: (tab: string) => void }) {
+   305→  const { data, isLoading, isError } = useQuery({
+   306→    queryKey: ['admin-stats'],
+   307→    queryFn: fetchAdminStats,
+   308→  });
+   309→
+   310→  const stats: AdminStats | null = data?.stats ?? null;
+   311→
+   312→  if (isLoading) return <StatsSkeleton />;
+   313→  if (isError) {
+   314→    return (
+   315→      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   316→        <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+   317→          <AlertTriangle className="size-8 text-destructive" />
+   318→        </div>
+   319→        <h3 className="font-semibold">Failed to load stats</h3>
+   320→        <p className="text-sm text-muted-foreground mt-1">Something went wrong. Please try again.</p>
+   321→      </motion.div>
+   322→    );
+   323→  }
+   324→
+   325→  if (!stats) return null;
+   326→
+   327→  return (
+   328→    <div className="space-y-8">
+   329→      {/* Stats Cards */}
+   330→      <motion.div
+   331→        variants={container}
+   332→        initial="hidden"
+   333→        animate="show"
+   334→        className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4"
+   335→      >
+   336→        <StatCard title="Total Users" value={stats.totalUsers} icon={Users} subtitle="Registered" color="bg-emerald-500" />
+   337→        <StatCard title="Total Notes" value={stats.totalNotes} icon={FileText} subtitle="Uploaded" color="bg-teal-500" />
+   338→        <StatCard title="Downloads" value={stats.totalDownloads} icon={Download} subtitle="All time" color="bg-amber-500" />
+   339→        <StatCard title="Colleges" value={stats.totalColleges} icon={GraduationCap} subtitle="Registered" color="bg-rose-500" />
+   340→        <StatCard title="Pending Reports" value={stats.pendingReports} icon={AlertTriangle} subtitle="Need review" color="bg-orange-500" />
+   341→        <StatCard title="Active Today" value={stats.activeUsersToday} icon={Activity} subtitle="Users" color="bg-cyan-500" />
+   342→      </motion.div>
+   343→
+   344→      {/* Quick Actions */}
+   345→      <motion.div
+   346→        initial={{ opacity: 0, y: 20 }}
+   347→        animate={{ opacity: 1, y: 0 }}
+   348→        transition={{ delay: 0.3 }}
+   349→      >
+   350→        <Card className="border-0 shadow-sm">
+   351→          <CardHeader className="pb-3">
+   352→            <CardTitle className="text-base flex items-center gap-2">
+   353→              <ArrowUpRight className="size-4 text-emerald-600" /> Quick Actions
+   354→            </CardTitle>
+   355→          </CardHeader>
+   356→          <CardContent>
+   357→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+   358→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('users')}>
+   359→                <Users className="size-5 text-emerald-600" />
+   360→                <span className="text-xs">View Users</span>
+   361→              </Button>
+   362→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('reports')}>
+   363→                <AlertTriangle className="size-5 text-orange-500" />
+   364→                <span className="text-xs">Review Reports</span>
+   365→              </Button>
+   366→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('colleges')}>
+   367→                <GraduationCap className="size-5 text-teal-600" />
+   368→                <span className="text-xs">Add College</span>
+   369→              </Button>
+   370→              <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => onTabChange('notes')}>
+   371→                <FileText className="size-5 text-amber-500" />
+   372→                <span className="text-xs">Flagged Notes</span>
+   373→              </Button>
+   374→            </div>
+   375→          </CardContent>
+   376→        </Card>
+   377→      </motion.div>
+   378→
+   379→      {/* Recent Reports */}
+   380→      {data?.stats?.recentReports && data.stats.recentReports.length > 0 && (
+   381→        <motion.div
+   382→          initial={{ opacity: 0, y: 20 }}
+   383→          animate={{ opacity: 1, y: 0 }}
+   384→          transition={{ delay: 0.5 }}
+   385→        >
+   386→          <Card className="border-0 shadow-sm">
+   387→            <CardHeader className="pb-3">
+   388→              <CardTitle className="text-base flex items-center gap-2">
+   389→                <AlertTriangle className="size-4 text-orange-500" /> Recent Reports
+   390→              </CardTitle>
+   391→            </CardHeader>
+   392→            <CardContent>
+   393→              <div className="space-y-3 max-h-64 overflow-y-auto">
+   394→                {data.stats.recentReports.map((report: { id: string; targetType: string; reason: string; status: string; createdAt: string; reporter: { name: string; avatarUrl?: string } }) => (
+   395→                  <div key={report.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+   396→                    <Avatar className="size-7">
+   397→                      {report.reporter.avatarUrl && <AvatarImage src={report.reporter.avatarUrl} />}
+   398→                      <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   399→                        {report.reporter.name.charAt(0)}
+   400→                      </AvatarFallback>
+   401→                    </Avatar>
+   402→                    <div className="flex-1 min-w-0">
+   403→                      <p className="text-xs font-medium truncate">{report.reason}</p>
+   404→                      <p className="text-[10px] text-muted-foreground">
+   405→                        Reported by {report.reporter.name} · {report.targetType}
+   406→                      </p>
+   407→                    </div>
+   408→                    <Badge className="text-[9px] bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 shrink-0">
+   409→                      {report.status}
+   410→                    </Badge>
+   411→                  </div>
+   412→                ))}
+   413→              </div>
+   414→            </CardContent>
+   415→          </Card>
+   416→        </motion.div>
+   417→      )}
+   418→    </div>
+   419→  );
+   420→}
+   421→
+   422→// ── Users Tab ───────────────────────────────────────────────────
+   423→function UsersTab() {
+   424→  const queryClient = useQueryClient();
+   425→  const [search, setSearch] = useState('');
+   426→  const [roleFilter, setRoleFilter] = useState('all');
+   427→  const [page, setPage] = useState(1);
+   428→  const limit = 10;
+   429→
+   430→  // Role change dialog state
+   431→  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+   432→  const [selectedUser, setSelectedUser] = useState<{
+   433→    id: string; name: string; role: string;
+   434→  } | null>(null);
+   435→  const [newRole, setNewRole] = useState('');
+   436→
+   437→  const params = new URLSearchParams({
+   438→    page: String(page),
+   439→    limit: String(limit),
+   440→    ...(search && { q: search }),
+   441→    ...(roleFilter !== 'all' && { role: roleFilter }),
+   442→  }).toString();
+   443→
+   444→  const { data, isLoading } = useQuery({
+   445→    queryKey: ['admin-users', search, roleFilter, page],
+   446→    queryFn: () => fetchAdminUsers(params),
+   447→  });
+   448→
+   449→  const users: {
+   450→    id: string; name: string; email: string; role: string; avatarUrl?: string;
+   451→    isActive: boolean; emailVerified: boolean; createdAt: string;
+   452→    _count?: { notes: number };
+   453→  }[] = data?.users ?? [];
+   454→  const total = data?.total ?? 0;
+   455→  const totalPages = Math.ceil(total / limit);
+   456→
+   457→  // Admin action mutation - POST /api/admin
+   458→  const adminActionMutation = useMutation({
+   459→    mutationFn: adminPostAction,
+   460→    onSuccess: () => {
+   461→      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+   462→      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+   463→    },
+   464→    onError: (error) => toast.error(error.message),
+   465→  });
+   466→
+   467→  const handleChangeRole = () => {
+   468→    if (!selectedUser || !newRole) return;
+   469→    adminActionMutation.mutate(
+   470→      { action: 'updateUser', id: selectedUser.id, role: newRole },
+   471→      {
+   472→        onSuccess: () => {
+   473→          toast.success(`Changed ${selectedUser.name}'s role to ${newRole.replace('_', ' ')}`);
+   474→          setRoleDialogOpen(false);
+   475→          setSelectedUser(null);
+   476→          setNewRole('');
+   477→        },
+   478→      },
+   479→    );
+   480→  };
+   481→
+   482→  const handleSuspendUser = (userId: string, userName: string) => {
+   483→    adminActionMutation.mutate(
+   484→      { action: 'updateUser', id: userId, isActive: false },
+   485→      { onSuccess: () => toast.success(`Suspended ${userName}`) },
+   486→    );
+   487→  };
+   488→
+   489→  const handleActivateUser = (userId: string, userName: string) => {
+   490→    adminActionMutation.mutate(
+   491→      { action: 'updateUser', id: userId, isActive: true },
+   492→      { onSuccess: () => toast.success(`Activated ${userName}`) },
+   493→    );
+   494→  };
+   495→
+   496→  const roleBadgeColor = (role: string) => {
+   497→    switch (role) {
+   498→      case 'super_admin': return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300';
+   499→      case 'admin': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300';
+   500→      case 'moderator': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+   501→      case 'contributor': return 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300';
+   502→      case 'verified_student': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+   503→      default: return 'bg-muted text-muted-foreground';
+   504→    }
+   505→  };
+   506→
+   507→  return (
+   508→    <div className="space-y-4">
+   509→      {/* Filters */}
+   510→      <div className="flex flex-col sm:flex-row gap-3">
+   511→        <div className="relative flex-1">
+   512→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   513→          <Input
+   514→            className="pl-9 h-9"
+   515→            placeholder="Search users by name or email..."
+   516→            value={search}
+   517→            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+   518→          />
+   519→        </div>
+   520→        <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); setPage(1); }}>
+   521→          <SelectTrigger className="h-9 w-[160px]">
+   522→            <SelectValue placeholder="Filter by role" />
+   523→          </SelectTrigger>
+   524→          <SelectContent>
+   525→            <SelectItem value="all">All Roles</SelectItem>
+   526→            <SelectItem value="student">Student</SelectItem>
+   527→            <SelectItem value="verified_student">Verified</SelectItem>
+   528→            <SelectItem value="contributor">Contributor</SelectItem>
+   529→            <SelectItem value="moderator">Moderator</SelectItem>
+   530→            <SelectItem value="admin">Admin</SelectItem>
+   531→            <SelectItem value="super_admin">Super Admin</SelectItem>
+   532→          </SelectContent>
+   533→        </Select>
+   534→      </div>
+   535→
+   536→      {/* Table */}
+   537→      {isLoading ? (
+   538→        <TableSkeleton cols={5} />
+   539→      ) : users.length === 0 ? (
+   540→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   541→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   542→            <Users className="size-8 text-muted-foreground" />
+   543→          </div>
+   544→          <h3 className="font-semibold">No users found</h3>
+   545→          <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or filter.</p>
+   546→        </motion.div>
+   547→      ) : (
+   548→        <Card className="border-0 shadow-sm">
+   549→          <Table>
+   550→            <TableHeader>
+   551→              <TableRow>
+   552→                <TableHead>User</TableHead>
+   553→                <TableHead>Role</TableHead>
+   554→                <TableHead>Status</TableHead>
+   555→                <TableHead>Notes</TableHead>
+   556→                <TableHead className="text-right">Actions</TableHead>
+   557→              </TableRow>
+   558→            </TableHeader>
+   559→            <TableBody>
+   560→              {users.map((u) => (
+   561→                <TableRow key={u.id}>
+   562→                  <TableCell>
+   563→                    <div className="flex items-center gap-2">
+   564→                      <Avatar className="size-7">
+   565→                        {u.avatarUrl && <AvatarImage src={u.avatarUrl} />}
+   566→                        <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   567→                          {u.name.charAt(0)}
+   568→                        </AvatarFallback>
+   569→                      </Avatar>
+   570→                      <div className="min-w-0">
+   571→                        <p className="text-sm font-medium truncate max-w-[150px]">{u.name}</p>
+   572→                        <p className="text-[10px] text-muted-foreground truncate max-w-[150px]">{u.email}</p>
+   573→                      </div>
+   574→                    </div>
+   575→                  </TableCell>
+   576→                  <TableCell>
+   577→                    <Badge className={`text-[10px] ${roleBadgeColor(u.role)}`}>
+   578→                      {u.role.replace('_', ' ')}
+   579→                    </Badge>
+   580→                  </TableCell>
+   581→                  <TableCell>
+   582→                    <Badge variant={u.isActive ? 'secondary' : 'destructive'} className="text-[10px]">
+   583→                      {u.isActive ? 'Active' : 'Suspended'}
+   584→                    </Badge>
+   585→                  </TableCell>
+   586→                  <TableCell className="text-sm">{u._count?.notes ?? 0}</TableCell>
+   587→                  <TableCell className="text-right">
+   588→                    <DropdownMenu>
+   589→                      <DropdownMenuTrigger asChild>
+   590→                        <Button variant="ghost" size="icon" className="size-7">
+   591→                          <MoreHorizontal className="size-3.5" />
+   592→                        </Button>
+   593→                      </DropdownMenuTrigger>
+   594→                      <DropdownMenuContent align="end">
+   595→                        <DropdownMenuItem
+   596→                          onClick={() => {
+   597→                            setSelectedUser({ id: u.id, name: u.name, role: u.role });
+   598→                            setNewRole(u.role);
+   599→                            setRoleDialogOpen(true);
+   600→                          }}
+   601→                        >
+   602→                          <UserCog className="size-3.5 mr-2" />
+   603→                          Change Role
+   604→                        </DropdownMenuItem>
+   605→                        {u.isActive ? (
+   606→                          <DropdownMenuItem
+   607→                            className="text-destructive focus:text-destructive"
+   608→                            onClick={() => handleSuspendUser(u.id, u.name)}
+   609→                            disabled={adminActionMutation.isPending}
+   610→                          >
+   611→                            <Ban className="size-3.5 mr-2" />
+   612→                            Suspend User
+   613→                          </DropdownMenuItem>
+   614→                        ) : (
+   615→                          <DropdownMenuItem
+   616→                            className="text-emerald-600 focus:text-emerald-600"
+   617→                            onClick={() => handleActivateUser(u.id, u.name)}
+   618→                            disabled={adminActionMutation.isPending}
+   619→                          >
+   620→                            <CheckCircle2 className="size-3.5 mr-2" />
+   621→                            Activate User
+   622→                          </DropdownMenuItem>
+   623→                        )}
+   624→                      </DropdownMenuContent>
+   625→                    </DropdownMenu>
+   626→                  </TableCell>
+   627→                </TableRow>
+   628→              ))}
+   629→            </TableBody>
+   630→          </Table>
+   631→        </Card>
+   632→      )}
+   633→
+   634→      {/* Pagination */}
+   635→      {totalPages > 1 && (
+   636→        <div className="flex items-center justify-center gap-2 pt-2">
+   637→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+   638→            <ChevronLeft className="size-4" /> Previous
+   639→          </Button>
+   640→          <span className="text-xs text-muted-foreground">
+   641→            Page {page} of {totalPages}
+   642→          </span>
+   643→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+   644→            Next <ChevronRight className="size-4" />
+   645→          </Button>
+   646→        </div>
+   647→      )}
+   648→
+   649→      {/* Change Role Dialog */}
+   650→      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
+   651→        <DialogContent>
+   652→          <DialogHeader>
+   653→            <DialogTitle>Change User Role</DialogTitle>
+   654→            <DialogDescription>
+   655→              Change the role for {selectedUser?.name}. This will affect their permissions on the platform.
+   656→            </DialogDescription>
+   657→          </DialogHeader>
+   658→          <div className="space-y-4 py-2">
+   659→            <div className="space-y-2">
+   660→              <Label>New Role</Label>
+   661→              <Select value={newRole} onValueChange={setNewRole}>
+   662→                <SelectTrigger>
+   663→                  <SelectValue placeholder="Select role" />
+   664→                </SelectTrigger>
+   665→                <SelectContent>
+   666→                  <SelectItem value="student">Student</SelectItem>
+   667→                  <SelectItem value="verified_student">Verified Student</SelectItem>
+   668→                  <SelectItem value="contributor">Contributor</SelectItem>
+   669→                  <SelectItem value="moderator">Moderator</SelectItem>
+   670→                  <SelectItem value="admin">Admin</SelectItem>
+   671→                  <SelectItem value="super_admin">Super Admin</SelectItem>
+   672→                </SelectContent>
+   673→              </Select>
+   674→            </div>
+   675→          </div>
+   676→          <DialogFooter>
+   677→            <Button variant="outline" onClick={() => setRoleDialogOpen(false)}>Cancel</Button>
+   678→            <Button
+   679→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   680→              disabled={!newRole || newRole === selectedUser?.role || adminActionMutation.isPending}
+   681→              onClick={handleChangeRole}
+   682→            >
+   683→              {adminActionMutation.isPending ? 'Updating...' : 'Update Role'}
+   684→            </Button>
+   685→          </DialogFooter>
+   686→        </DialogContent>
+   687→      </Dialog>
+   688→    </div>
+   689→  );
+   690→}
+   691→
+   692→// ── Notes Tab ───────────────────────────────────────────────────
+   693→function NotesTab() {
+   694→  const queryClient = useQueryClient();
+   695→  const [statusFilter, setStatusFilter] = useState('all');
+   696→  const [page, setPage] = useState(1);
+   697→  const limit = 10;
+   698→
+   699→  // Remove note dialog state
+   700→  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+   701→  const [noteToRemove, setNoteToRemove] = useState<{ id: string; title: string } | null>(null);
+   702→  const [removeReason, setRemoveReason] = useState('');
+   703→
+   704→  const params = new URLSearchParams({
+   705→    page: String(page),
+   706→    limit: String(limit),
+   707→    ...(statusFilter !== 'all' && { status: statusFilter }),
+   708→  }).toString();
+   709→
+   710→  const { data, isLoading } = useQuery({
+   711→    queryKey: ['admin-notes', statusFilter, page],
+   712→    queryFn: () => fetchAdminNotes(params),
+   713→  });
+   714→
+   715→  const notes: {
+   716→    id: string; title: string; fileType: string; status: string;
+   717→    downloadCount: number; viewCount: number; avgRating: number;
+   718→    createdAt: string;
+   719→    uploader: { id: string; name: string; avatarUrl?: string };
+   720→    subject?: { name: string };
+   721→  }[] = data?.notes ?? [];
+   722→  const total = data?.total ?? 0;
+   723→  const totalPages = Math.ceil(total / limit);
+   724→
+   725→  // Admin action mutation - POST /api/admin
+   726→  const adminActionMutation = useMutation({
+   727→    mutationFn: adminPostAction,
+   728→    onSuccess: () => {
+   729→      queryClient.invalidateQueries({ queryKey: ['admin-notes'] });
+   730→      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+   731→    },
+   732→    onError: (error) => toast.error(error.message),
+   733→  });
+   734→
+   735→  const handleRemoveNote = () => {
+   736→    if (!noteToRemove || !removeReason.trim()) return;
+   737→    adminActionMutation.mutate(
+   738→      { action: 'removeNote', id: noteToRemove.id, reason: removeReason.trim() },
+   739→      {
+   740→        onSuccess: () => {
+   741→          toast.success(`Note "${noteToRemove.title}" removed`);
+   742→          setRemoveDialogOpen(false);
+   743→          setNoteToRemove(null);
+   744→          setRemoveReason('');
+   745→        },
+   746→      },
+   747→    );
+   748→  };
+   749→
+   750→  const handleFeatureNote = (noteId: string, noteTitle: string) => {
+   751→    adminActionMutation.mutate(
+   752→      { action: 'featureNote', id: noteId },
+   753→      { onSuccess: () => toast.success(`Note "${noteTitle}" featured`) },
+   754→    );
+   755→  };
+   756→
+   757→  const statusBadge = (status: string) => {
+   758→    switch (status) {
+   759→      case 'active': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+   760→      case 'processing': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+   761→      case 'flagged': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300';
+   762→      case 'removed': return 'bg-destructive/10 text-destructive';
+   763→      case 'draft': return 'bg-muted text-muted-foreground';
+   764→      default: return 'bg-muted text-muted-foreground';
+   765→    }
+   766→  };
+   767→
+   768→  return (
+   769→    <div className="space-y-4">
+   770→      {/* Filters */}
+   771→      <div className="flex items-center gap-3">
+   772→        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+   773→          <SelectTrigger className="h-9 w-[160px]">
+   774→            <SelectValue placeholder="Filter by status" />
+   775→          </SelectTrigger>
+   776→          <SelectContent>
+   777→            <SelectItem value="all">All Statuses</SelectItem>
+   778→            <SelectItem value="active">Active</SelectItem>
+   779→            <SelectItem value="processing">Processing</SelectItem>
+   780→            <SelectItem value="flagged">Flagged</SelectItem>
+   781→            <SelectItem value="removed">Removed</SelectItem>
+   782→            <SelectItem value="draft">Draft</SelectItem>
+   783→          </SelectContent>
+   784→        </Select>
+   785→        <span className="text-xs text-muted-foreground">{total} notes</span>
+   786→      </div>
+   787→
+   788→      {/* Table */}
+   789→      {isLoading ? (
+   790→        <TableSkeleton cols={6} />
+   791→      ) : notes.length === 0 ? (
+   792→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   793→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   794→            <FileText className="size-8 text-muted-foreground" />
+   795→          </div>
+   796→          <h3 className="font-semibold">No notes found</h3>
+   797→          <p className="text-sm text-muted-foreground mt-1">No notes match the current filter.</p>
+   798→        </motion.div>
+   799→      ) : (
+   800→        <Card className="border-0 shadow-sm">
+   801→          <Table>
+   802→            <TableHeader>
+   803→              <TableRow>
+   804→                <TableHead>Note</TableHead>
+   805→                <TableHead>Status</TableHead>
+   806→                <TableHead>Type</TableHead>
+   807→                <TableHead>Stats</TableHead>
+   808→                <TableHead>Uploader</TableHead>
+   809→                <TableHead className="text-right">Actions</TableHead>
+   810→              </TableRow>
+   811→            </TableHeader>
+   812→            <TableBody>
+   813→              {notes.map((n) => (
+   814→                <TableRow key={n.id}>
+   815→                  <TableCell>
+   816→                    <div className="min-w-0">
+   817→                      <p className="text-sm font-medium truncate max-w-[200px]">{n.title}</p>
+   818→                      {n.subject && (
+   819→                        <p className="text-[10px] text-muted-foreground">{n.subject.name}</p>
+   820→                      )}
+   821→                    </div>
+   822→                  </TableCell>
+   823→                  <TableCell>
+   824→                    <Badge className={`text-[10px] ${statusBadge(n.status)}`}>
+   825→                      {n.status}
+   826→                    </Badge>
+   827→                  </TableCell>
+   828→                  <TableCell>
+   829→                    <Badge variant="outline" className="text-[10px] font-mono">
+   830→                      {n.fileType?.toUpperCase() || 'FILE'}
+   831→                    </Badge>
+   832→                  </TableCell>
+   833→                  <TableCell>
+   834→                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+   835→                      <span className="flex items-center gap-0.5"><Download className="size-3" />{n.downloadCount}</span>
+   836→                      <span className="flex items-center gap-0.5"><Eye className="size-3" />{n.viewCount}</span>
+   837→                      <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{n.avgRating > 0 ? n.avgRating.toFixed(1) : '—'}</span>
+   838→                    </div>
+   839→                  </TableCell>
+   840→                  <TableCell>
+   841→                    <div className="flex items-center gap-1.5">
+   842→                      <Avatar className="size-5">
+   843→                        {n.uploader.avatarUrl && <AvatarImage src={n.uploader.avatarUrl} />}
+   844→                        <AvatarFallback className="text-[8px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   845→                          {n.uploader.name.charAt(0)}
+   846→                        </AvatarFallback>
+   847→                      </Avatar>
+   848→                      <span className="text-xs text-muted-foreground truncate max-w-[80px]">{n.uploader.name}</span>
+   849→                    </div>
+   850→                  </TableCell>
+   851→                  <TableCell className="text-right">
+   852→                    <div className="flex items-center justify-end gap-1">
+   853→                      {n.status !== 'removed' && (
+   854→                        <Button
+   855→                          variant="ghost"
+   856→                          size="icon"
+   857→                          className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   858→                          onClick={() => handleFeatureNote(n.id, n.title)}
+   859→                          disabled={adminActionMutation.isPending}
+   860→                          title="Feature note"
+   861→                        >
+   862→                          <Star className="size-3.5 text-emerald-600" />
+   863→                        </Button>
+   864→                      )}
+   865→                      {n.status !== 'removed' && (
+   866→                        <Button
+   867→                          variant="ghost"
+   868→                          size="icon"
+   869→                          className="size-7 hover:bg-destructive/10"
+   870→                          onClick={() => {
+   871→                            setNoteToRemove({ id: n.id, title: n.title });
+   872→                            setRemoveReason('');
+   873→                            setRemoveDialogOpen(true);
+   874→                          }}
+   875→                          title="Remove note"
+   876→                        >
+   877→                          <Trash2 className="size-3.5 text-destructive" />
+   878→                        </Button>
+   879→                      )}
+   880→                    </div>
+   881→                  </TableCell>
+   882→                </TableRow>
+   883→              ))}
+   884→            </TableBody>
+   885→          </Table>
+   886→        </Card>
+   887→      )}
+   888→
+   889→      {/* Pagination */}
+   890→      {totalPages > 1 && (
+   891→        <div className="flex items-center justify-center gap-2 pt-2">
+   892→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+   893→            <ChevronLeft className="size-4" /> Previous
+   894→          </Button>
+   895→          <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+   896→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+   897→            Next <ChevronRight className="size-4" />
+   898→          </Button>
+   899→        </div>
+   900→      )}
+   901→
+   902→      {/* Remove Note Dialog */}
+   903→      <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
+   904→        <DialogContent>
+   905→          <DialogHeader>
+   906→            <DialogTitle>Remove Note</DialogTitle>
+   907→            <DialogDescription>
+   908→              Remove &quot;{noteToRemove?.title}&quot; from the platform. This action will set the note status to removed.
+   909→            </DialogDescription>
+   910→          </DialogHeader>
+   911→          <div className="space-y-4 py-2">
+   912→            <div className="space-y-2">
+   913→              <Label htmlFor="remove-reason">Reason for removal *</Label>
+   914→              <Textarea
+   915→                id="remove-reason"
+   916→                placeholder="e.g., Contains copyrighted material, violates community guidelines..."
+   917→                value={removeReason}
+   918→                onChange={(e) => setRemoveReason(e.target.value)}
+   919→                className="min-h-[80px] resize-none"
+   920→              />
+   921→            </div>
+   922→          </div>
+   923→          <DialogFooter>
+   924→            <Button variant="outline" onClick={() => setRemoveDialogOpen(false)}>Cancel</Button>
+   925→            <Button
+   926→              variant="destructive"
+   927→              disabled={!removeReason.trim() || adminActionMutation.isPending}
+   928→              onClick={handleRemoveNote}
+   929→            >
+   930→              {adminActionMutation.isPending ? 'Removing...' : 'Remove Note'}
+   931→            </Button>
+   932→          </DialogFooter>
+   933→        </DialogContent>
+   934→      </Dialog>
+   935→    </div>
+   936→  );
+   937→}
+   938→
+   939→// ── Reports Tab ─────────────────────────────────────────────────
+   940→function ReportsTab() {
+   941→  const queryClient = useQueryClient();
+   942→  const [statusFilter, setStatusFilter] = useState('pending');
+   943→  const [page, setPage] = useState(1);
+   944→  const limit = 10;
+   945→
+   946→  const params = new URLSearchParams({
+   947→    page: String(page),
+   948→    limit: String(limit),
+   949→    ...(statusFilter !== 'all' && { status: statusFilter }),
+   950→  }).toString();
+   951→
+   952→  const { data, isLoading } = useQuery({
+   953→    queryKey: ['admin-reports', statusFilter, page],
+   954→    queryFn: () => fetchAdminReports(params),
+   955→  });
+   956→
+   957→  const reports: {
+   958→    id: string; targetType: string; targetId: string; reason: string;
+   959→    description?: string; status: string; createdAt: string;
+   960→    reporter: { id: string; name: string; avatarUrl?: string };
+   961→  }[] = data?.reports ?? [];
+   962→  const total = data?.total ?? 0;
+   963→  const totalPages = Math.ceil(total / limit);
+   964→
+   965→  // Admin action mutation - POST /api/admin
+   966→  const adminActionMutation = useMutation({
+   967→    mutationFn: adminPostAction,
+   968→    onSuccess: () => {
+   969→      queryClient.invalidateQueries({ queryKey: ['admin-reports'] });
+   970→      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+   971→    },
+   972→    onError: (error) => toast.error(error.message),
+   973→  });
+   974→
+   975→  const handleResolve = (reportId: string) => {
+   976→    adminActionMutation.mutate(
+   977→      { action: 'resolveReport', id: reportId, reportAction: 'resolve' },
+   978→      { onSuccess: () => toast.success('Report resolved') },
+   979→    );
+   980→  };
+   981→
+   982→  const handleDismiss = (reportId: string) => {
+   983→    adminActionMutation.mutate(
+   984→      { action: 'resolveReport', id: reportId, reportAction: 'dismiss' },
+   985→      { onSuccess: () => toast.success('Report dismissed') },
+   986→    );
+   987→  };
+   988→
+   989→  const statusBadgeColor = (status: string) => {
+   990→    switch (status) {
+   991→      case 'pending': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+   992→      case 'resolved': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+   993→      case 'dismissed': return 'bg-muted text-muted-foreground';
+   994→      default: return 'bg-muted text-muted-foreground';
+   995→    }
+   996→  };
+   997→
+   998→  return (
+   999→    <div className="space-y-4">
+  1000→      {/* Filters */}
+  1001→      <div className="flex items-center gap-3">
+  1002→        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+  1003→          <SelectTrigger className="h-9 w-[160px]">
+  1004→            <SelectValue placeholder="Filter by status" />
+  1005→          </SelectTrigger>
+  1006→          <SelectContent>
+  1007→            <SelectItem value="all">All Statuses</SelectItem>
+  1008→            <SelectItem value="pending">Pending</SelectItem>
+  1009→            <SelectItem value="resolved">Resolved</SelectItem>
+  1010→            <SelectItem value="dismissed">Dismissed</SelectItem>
+  1011→          </SelectContent>
+  1012→        </Select>
+  1013→        <span className="text-xs text-muted-foreground">{total} reports</span>
+  1014→      </div>
+  1015→
+  1016→      {/* Reports list */}
+  1017→      {isLoading ? (
+  1018→        <TableSkeleton cols={4} />
+  1019→      ) : reports.length === 0 ? (
+  1020→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+  1021→          <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 p-4 mb-4">
+  1022→            <CheckCircle2 className="size-8 text-emerald-600" />
+  1023→          </div>
+  1024→          <h3 className="font-semibold">
+  1025→            {statusFilter === 'pending' ? 'All clear!' : 'No reports found'}
+  1026→          </h3>
+  1027→          <p className="text-sm text-muted-foreground mt-1">
+  1028→            {statusFilter === 'pending' ? 'No pending reports to review.' : 'No reports match the current filter.'}
+  1029→          </p>
+  1030→        </motion.div>
+  1031→      ) : (
+  1032→        <div className="space-y-3">
+  1033→          {reports.map((report) => (
+  1034→            <motion.div
+  1035→              key={report.id}
+  1036→              initial={{ opacity: 0, y: 5 }}
+  1037→              animate={{ opacity: 1, y: 0 }}
+  1038→            >
+  1039→              <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+  1040→                <CardContent className="p-4">
+  1041→                  <div className="flex items-start gap-3">
+  1042→                    <Avatar className="size-8 mt-0.5">
+  1043→                      {report.reporter.avatarUrl && <AvatarImage src={report.reporter.avatarUrl} />}
+  1044→                      <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+  1045→                        {report.reporter.name.charAt(0)}
+  1046→                      </AvatarFallback>
+  1047→                    </Avatar>
+  1048→                    <div className="flex-1 min-w-0 space-y-1">
+  1049→                      <div className="flex items-center gap-2 flex-wrap">
+  1050→                        <span className="text-sm font-medium">{report.reason}</span>
+  1051→                        <Badge className={`text-[10px] ${statusBadgeColor(report.status)}`}>
+  1052→                          {report.status}
+  1053→                        </Badge>
+  1054→                        <Badge variant="outline" className="text-[10px]">
+  1055→                          {report.targetType}
+  1056→                        </Badge>
+  1057→                      </div>
+  1058→                      {report.description && (
+  1059→                        <p className="text-xs text-muted-foreground line-clamp-2">{report.description}</p>
+  1060→                      )}
+  1061→                      <p className="text-[10px] text-muted-foreground">
+  1062→                        Reported by {report.reporter.name} · {new Date(report.createdAt).toLocaleDateString()}
+  1063→                      </p>
+  1064→                    </div>
+  1065→                    {report.status === 'pending' && (
+  1066→                      <div className="flex items-center gap-1 shrink-0">
+  1067→                        <Button
+  1068→                          variant="outline"
+  1069→                          size="sm"
+  1070→                          className="h-7 text-xs gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800"
+  1071→                          disabled={adminActionMutation.isPending}
+  1072→                          onClick={() => handleResolve(report.id)}
+  1073→                        >
+  1074→                          <CheckCircle2 className="size-3" /> Resolve
+  1075→                        </Button>
+  1076→                        <Button
+  1077→                          variant="outline"
+  1078→                          size="sm"
+  1079→                          className="h-7 text-xs gap-1"
+  1080→                          disabled={adminActionMutation.isPending}
+  1081→                          onClick={() => handleDismiss(report.id)}
+  1082→                        >
+  1083→                          <X className="size-3" /> Dismiss
+  1084→                        </Button>
+  1085→                      </div>
+  1086→                    )}
+  1087→                  </div>
+  1088→                </CardContent>
+  1089→              </Card>
+  1090→            </motion.div>
+  1091→          ))}
+  1092→        </div>
+  1093→      )}
+  1094→
+  1095→      {/* Pagination */}
+  1096→      {totalPages > 1 && (
+  1097→        <div className="flex items-center justify-center gap-2 pt-2">
+  1098→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+  1099→            <ChevronLeft className="size-4" /> Previous
+  1100→          </Button>
+  1101→          <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+  1102→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+  1103→            Next <ChevronRight className="size-4" />
+  1104→          </Button>
+  1105→        </div>
+  1106→      )}
+  1107→    </div>
+  1108→  );
+  1109→}
+  1110→
+  1111→// ── Colleges Tab ────────────────────────────────────────────────
+  1112→function CollegesTab() {
+  1113→  const queryClient = useQueryClient();
+  1114→  const [page, setPage] = useState(1);
+  1115→  const limit = 10;
+  1116→
+  1117→  // Add dialog state
+  1118→  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  1119→  const [newCollege, setNewCollege] = useState({ name: '', shortName: '', city: '', state: '', country: '', type: '', website: '' });
+  1120→
+  1121→  // Edit dialog state
+  1122→  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  1123→  const [editCollege, setEditCollege] = useState<CollegeData & { website?: string; country?: string } | null>(null);
+  1124→
+  1125→  // Delete dialog state
+  1126→  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  1127→  const [collegeToDelete, setCollegeToDelete] = useState<{ id: string; name: string } | null>(null);
+  1128→
+  1129→  const params = new URLSearchParams({
+  1130→    page: String(page),
+  1131→    limit: String(limit),
+  1132→  }).toString();
+  1133→
+  1134→  const { data, isLoading } = useQuery({
+  1135→    queryKey: ['admin-colleges', page],
+  1136→    queryFn: () => fetchAdminColleges(params),
+  1137→  });
+  1138→
+  1139→  const colleges: (CollegeData & { website?: string; country?: string })[] = data?.colleges ?? [];
+  1140→  const total = data?.total ?? 0;
+  1141→  const totalPages = Math.ceil(total / limit);
+  1142→
+  1143→  // Add college mutation - POST /api/colleges
+  1144→  const addCollegeMutation = useMutation({
+  1145→    mutationFn: (college: typeof newCollege) =>
+  1146→      fetch('/api/colleges', {
+  1147→        method: 'POST',
+  1148→        headers: { 'Content-Type': 'application/json' },
+  1149→        body: JSON.stringify(college),
+  1150→      }).then(async (res) => {
+  1151→        const data = await res.json().catch(() => ({}));
+  1152→        if (!res.ok) throw new Error(data.error || 'Failed to add college');
+  1153→        return data;
+  1154→      }),
+  1155→    onSuccess: () => {
+  1156→      queryClient.invalidateQueries({ queryKey: ['admin-colleges'] });
+  1157→      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+  1158→      setAddDialogOpen(false);
+  1159→      setNewCollege({ name: '', shortName: '', city: '', state: '', country: '', type: '', website: '' });
+  1160→      toast.success('College added successfully');
+  1161→    },
+  1162→    onError: (error) => toast.error(error.message),
+  1163→  });
+  1164→
+  1165→  // Admin action mutation - POST /api/admin
+  1166→  const adminActionMutation = useMutation({
+  1167→    mutationFn: adminPostAction,
+  1168→    onSuccess: () => {
+  1169→      queryClient.invalidateQueries({ queryKey: ['admin-colleges'] });
+  1170→      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+  1171→    },
+  1172→    onError: (error) => toast.error(error.message),
+  1173→  });
+  1174→
+  1175→  const handleUpdateCollege = () => {
+  1176→    if (!editCollege) return;
+  1177→    const updateData: Record<string, unknown> = { action: 'updateCollege', id: editCollege.id };
+  1178→    if (editCollege.name) updateData.name = editCollege.name;
+  1179→    if (editCollege.shortName !== undefined) updateData.shortName = editCollege.shortName;
+  1180→    if (editCollege.city !== undefined) updateData.city = editCollege.city;
+  1181→    if (editCollege.state !== undefined) updateData.state = editCollege.state;
+  1182→    if (editCollege.country !== undefined) updateData.country = editCollege.country;
+  1183→    if (editCollege.type !== undefined) updateData.type = editCollege.type;
+  1184→    if (editCollege.website !== undefined) updateData.website = editCollege.website;
+  1185→    if (editCollege.isVerified !== undefined) updateData.isVerified = editCollege.isVerified;
+  1186→
+  1187→    adminActionMutation.mutate(updateData, {
+  1188→      onSuccess: () => {
+  1189→        toast.success('College updated successfully');
+  1190→        setEditDialogOpen(false);
+  1191→        setEditCollege(null);
+  1192→      },
+  1193→    });
+  1194→  };
+  1195→
+  1196→  const handleDeleteCollege = () => {
+  1197→    if (!collegeToDelete) return;
+  1198→    adminActionMutation.mutate(
+  1199→      { action: 'deleteCollege', id: collegeToDelete.id },
+  1200→      {
+  1201→        onSuccess: () => {
+  1202→          toast.success('College deleted successfully');
+  1203→          setDeleteDialogOpen(false);
+  1204→          setCollegeToDelete(null);
+  1205→        },
+  1206→      },
+  1207→    );
+  1208→  };
+  1209→
+  1210→  return (
+  1211→    <div className="space-y-4">
+  1212→      {/* Header with Add button */}
+  1213→      <div className="flex items-center justify-between">
+  1214→        <span className="text-xs text-muted-foreground">{total} colleges</span>
+  1215→        <Button
+  1216→          size="sm"
+  1217→          className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+  1218→          onClick={() => setAddDialogOpen(true)}
+  1219→        >
+  1220→          <Plus className="size-4" /> Add College
+  1221→        </Button>
+  1222→      </div>
+  1223→
+  1224→      {/* Colleges list */}
+  1225→      {isLoading ? (
+  1226→        <TableSkeleton cols={4} />
+  1227→      ) : colleges.length === 0 ? (
+  1228→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+  1229→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+  1230→            <GraduationCap className="size-8 text-muted-foreground" />
+  1231→          </div>
+  1232→          <h3 className="font-semibold">No colleges yet</h3>
+  1233→          <p className="text-sm text-muted-foreground mt-1">Add the first college to get started.</p>
+  1234→        </motion.div>
+  1235→      ) : (
+  1236→        <Card className="border-0 shadow-sm">
+  1237→          <Table>
+  1238→            <TableHeader>
+  1239→              <TableRow>
+  1240→                <TableHead>College</TableHead>
+  1241→                <TableHead>Location</TableHead>
+  1242→                <TableHead>Verified</TableHead>
+  1243→                <TableHead>Notes</TableHead>
+  1244→                <TableHead className="text-right">Actions</TableHead>
+  1245→              </TableRow>
+  1246→            </TableHeader>
+  1247→            <TableBody>
+  1248→              {colleges.map((college) => (
+  1249→                <TableRow key={college.id}>
+  1250→                  <TableCell>
+  1251→                    <div className="min-w-0">
+  1252→                      <p className="text-sm font-medium">{college.name}</p>
+  1253→                      {college.shortName && (
+  1254→                        <p className="text-[10px] text-muted-foreground">{college.shortName}</p>
+  1255→                      )}
+  1256→                    </div>
+  1257→                  </TableCell>
+  1258→                  <TableCell className="text-xs text-muted-foreground">
+  1259→                    {[college.city, college.state].filter(Boolean).join(', ') || '—'}
+  1260→                  </TableCell>
+  1261→                  <TableCell>
+  1262→                    {college.isVerified ? (
+  1263→                      <Badge className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+  1264→                        Verified
+  1265→                      </Badge>
+  1266→                    ) : (
+  1267→                      <Badge variant="outline" className="text-[10px]">Unverified</Badge>
+  1268→                    )}
+  1269→                  </TableCell>
+  1270→                  <TableCell className="text-sm">{college.noteCount}</TableCell>
+  1271→                  <TableCell className="text-right">
+  1272→                    <div className="flex items-center justify-end gap-1">
+  1273→                      <Button
+  1274→                        variant="ghost"
+  1275→                        size="icon"
+  1276→                        className="size-7 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+  1277→                        onClick={() => {
+  1278→                          setEditCollege({ ...college });
+  1279→                          setEditDialogOpen(true);
+  1280→                        }}
+  1281→                        title="Edit college"
+  1282→                      >
+  1283→                        <Pencil className="size-3.5 text-emerald-600" />
+  1284→                      </Button>
+  1285→                      <Button
+  1286→                        variant="ghost"
+  1287→                        size="icon"
+  1288→                        className="size-7 hover:bg-destructive/10"
+  1289→                        onClick={() => {
+  1290→                          setCollegeToDelete({ id: college.id, name: college.name });
+  1291→                          setDeleteDialogOpen(true);
+  1292→                        }}
+  1293→                        title="Delete college"
+  1294→                      >
+  1295→                        <Trash2 className="size-3.5 text-destructive" />
+  1296→                      </Button>
+  1297→                    </div>
+  1298→                  </TableCell>
+  1299→                </TableRow>
+  1300→              ))}
+  1301→            </TableBody>
+  1302→          </Table>
+  1303→        </Card>
+  1304→      )}
+  1305→
+  1306→      {/* Pagination */}
+  1307→      {totalPages > 1 && (
+  1308→        <div className="flex items-center justify-center gap-2 pt-2">
+  1309→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="gap-1">
+  1310→            <ChevronLeft className="size-4" /> Previous
+  1311→          </Button>
+  1312→          <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+  1313→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="gap-1">
+  1314→            Next <ChevronRight className="size-4" />
+  1315→          </Button>
+  1316→        </div>
+  1317→      )}
+  1318→
+  1319→      {/* Add College Dialog */}
+  1320→      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+  1321→        <DialogContent>
+  1322→          <DialogHeader>
+  1323→            <DialogTitle>Add New College</DialogTitle>
+  1324→            <DialogDescription>Add a new college to the platform.</DialogDescription>
+  1325→          </DialogHeader>
+  1326→          <div className="space-y-4 py-2">
+  1327→            <div className="space-y-2">
+  1328→              <Label htmlFor="college-name">College Name *</Label>
+  1329→              <Input
+  1330→                id="college-name"
+  1331→                value={newCollege.name}
+  1332→                onChange={(e) => setNewCollege((p) => ({ ...p, name: e.target.value }))}
+  1333→                placeholder="e.g., Indian Institute of Technology Delhi"
+  1334→              />
+  1335→            </div>
+  1336→            <div className="grid grid-cols-2 gap-3">
+  1337→              <div className="space-y-2">
+  1338→                <Label htmlFor="short-name">Short Name</Label>
+  1339→                <Input
+  1340→                  id="short-name"
+  1341→                  value={newCollege.shortName}
+  1342→                  onChange={(e) => setNewCollege((p) => ({ ...p, shortName: e.target.value }))}
+  1343→                  placeholder="e.g., IIT Delhi"
+  1344→                />
+  1345→              </div>
+  1346→              <div className="space-y-2">
+  1347→                <Label htmlFor="add-city">City</Label>
+  1348→                <Input
+  1349→                  id="add-city"
+  1350→                  value={newCollege.city}
+  1351→                  onChange={(e) => setNewCollege((p) => ({ ...p, city: e.target.value }))}
+  1352→                  placeholder="e.g., New Delhi"
+  1353→                />
+  1354→              </div>
+  1355→            </div>
+  1356→            <div className="grid grid-cols-2 gap-3">
+  1357→              <div className="space-y-2">
+  1358→                <Label htmlFor="add-state">State</Label>
+  1359→                <Input
+  1360→                  id="add-state"
+  1361→                  value={newCollege.state}
+  1362→                  onChange={(e) => setNewCollege((p) => ({ ...p, state: e.target.value }))}
+  1363→                  placeholder="e.g., Delhi"
+  1364→                />
+  1365→              </div>
+  1366→              <div className="space-y-2">
+  1367→                <Label htmlFor="add-country">Country</Label>
+  1368→                <Input
+  1369→                  id="add-country"
+  1370→                  value={newCollege.country}
+  1371→                  onChange={(e) => setNewCollege((p) => ({ ...p, country: e.target.value }))}
+  1372→                  placeholder="e.g., India"
+  1373→                />
+  1374→              </div>
+  1375→            </div>
+  1376→            <div className="grid grid-cols-2 gap-3">
+  1377→              <div className="space-y-2">
+  1378→                <Label htmlFor="add-type">Type</Label>
+  1379→                <Select value={newCollege.type || '_none'} onValueChange={(v) => setNewCollege((p) => ({ ...p, type: v === '_none' ? '' : v }))}>
+  1380→                  <SelectTrigger id="add-type">
+  1381→                    <SelectValue placeholder="Select type" />
+  1382→                  </SelectTrigger>
+  1383→                  <SelectContent>
+  1384→                    <SelectItem value="_none">None</SelectItem>
+  1385→                    <SelectItem value="university">University</SelectItem>
+  1386→                    <SelectItem value="college">College</SelectItem>
+  1387→                    <SelectItem value="institute">Institute</SelectItem>
+  1388→                    <SelectItem value="deemed_university">Deemed University</SelectItem>
+  1389→                  </SelectContent>
+  1390→                </Select>
+  1391→              </div>
+  1392→              <div className="space-y-2">
+  1393→                <Label htmlFor="add-website">Website</Label>
+  1394→                <Input
+  1395→                  id="add-website"
+  1396→                  value={newCollege.website}
+  1397→                  onChange={(e) => setNewCollege((p) => ({ ...p, website: e.target.value }))}
+  1398→                  placeholder="e.g., https://iitd.ac.in"
+  1399→                />
+  1400→              </div>
+  1401→            </div>
+  1402→          </div>
+  1403→          <DialogFooter>
+  1404→            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+  1405→            <Button
+  1406→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1407→              disabled={!newCollege.name.trim() || addCollegeMutation.isPending}
+  1408→              onClick={() => addCollegeMutation.mutate(newCollege)}
+  1409→            >
+  1410→              {addCollegeMutation.isPending ? 'Adding...' : 'Add College'}
+  1411→            </Button>
+  1412→          </DialogFooter>
+  1413→        </DialogContent>
+  1414→      </Dialog>
+  1415→
+  1416→      {/* Edit College Dialog */}
+  1417→      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+  1418→        <DialogContent>
+  1419→          <DialogHeader>
+  1420→            <DialogTitle>Edit College</DialogTitle>
+  1421→            <DialogDescription>Update college information.</DialogDescription>
+  1422→          </DialogHeader>
+  1423→          {editCollege && (
+  1424→            <div className="space-y-4 py-2">
+  1425→              <div className="space-y-2">
+  1426→                <Label htmlFor="edit-name">College Name *</Label>
+  1427→                <Input
+  1428→                  id="edit-name"
+  1429→                  value={editCollege.name}
+  1430→                  onChange={(e) => setEditCollege((p) => p ? { ...p, name: e.target.value } : p)}
+  1431→                  placeholder="e.g., Indian Institute of Technology Delhi"
+  1432→                />
+  1433→              </div>
+  1434→              <div className="grid grid-cols-2 gap-3">
+  1435→                <div className="space-y-2">
+  1436→                  <Label htmlFor="edit-short-name">Short Name</Label>
+  1437→                  <Input
+  1438→                    id="edit-short-name"
+  1439→                    value={editCollege.shortName || ''}
+  1440→                    onChange={(e) => setEditCollege((p) => p ? { ...p, shortName: e.target.value } : p)}
+  1441→                    placeholder="e.g., IIT Delhi"
+  1442→                  />
+  1443→                </div>
+  1444→                <div className="space-y-2">
+  1445→                  <Label htmlFor="edit-city">City</Label>
+  1446→                  <Input
+  1447→                    id="edit-city"
+  1448→                    value={editCollege.city || ''}
+  1449→                    onChange={(e) => setEditCollege((p) => p ? { ...p, city: e.target.value } : p)}
+  1450→                    placeholder="e.g., New Delhi"
+  1451→                  />
+  1452→                </div>
+  1453→              </div>
+  1454→              <div className="grid grid-cols-2 gap-3">
+  1455→                <div className="space-y-2">
+  1456→                  <Label htmlFor="edit-state">State</Label>
+  1457→                  <Input
+  1458→                    id="edit-state"
+  1459→                    value={editCollege.state || ''}
+  1460→                    onChange={(e) => setEditCollege((p) => p ? { ...p, state: e.target.value } : p)}
+  1461→                    placeholder="e.g., Delhi"
+  1462→                  />
+  1463→                </div>
+  1464→                <div className="space-y-2">
+  1465→                  <Label htmlFor="edit-country">Country</Label>
+  1466→                  <Input
+  1467→                    id="edit-country"
+  1468→                    value={editCollege.country || ''}
+  1469→                    onChange={(e) => setEditCollege((p) => p ? { ...p, country: e.target.value } : p)}
+  1470→                    placeholder="e.g., India"
+  1471→                  />
+  1472→                </div>
+  1473→              </div>
+  1474→              <div className="grid grid-cols-2 gap-3">
+  1475→                <div className="space-y-2">
+  1476→                  <Label htmlFor="edit-type">Type</Label>
+  1477→                  <Select value={editCollege.type || '_none'} onValueChange={(v) => setEditCollege((p) => p ? { ...p, type: v === '_none' ? '' : v } : p)}>
+  1478→                    <SelectTrigger id="edit-type">
+  1479→                      <SelectValue placeholder="Select type" />
+  1480→                    </SelectTrigger>
+  1481→                    <SelectContent>
+  1482→                      <SelectItem value="_none">None</SelectItem>
+  1483→                      <SelectItem value="university">University</SelectItem>
+  1484→                      <SelectItem value="college">College</SelectItem>
+  1485→                      <SelectItem value="institute">Institute</SelectItem>
+  1486→                      <SelectItem value="deemed_university">Deemed University</SelectItem>
+  1487→                    </SelectContent>
+  1488→                  </Select>
+  1489→                </div>
+  1490→                <div className="space-y-2">
+  1491→                  <Label htmlFor="edit-website">Website</Label>
+  1492→                  <Input
+  1493→                    id="edit-website"
+  1494→                    value={editCollege.website || ''}
+  1495→                    onChange={(e) => setEditCollege((p) => p ? { ...p, website: e.target.value } : p)}
+  1496→                    placeholder="e.g., https://iitd.ac.in"
+  1497→                  />
+  1498→                </div>
+  1499→              </div>
+  1500→              <div className="flex items-center gap-3">
+  1501→                <Label htmlFor="edit-verified">Verified Status</Label>
+  1502→                <Button
+  1503→                  id="edit-verified"
+  1504→                  variant={editCollege.isVerified ? 'default' : 'outline'}
+  1505→                  size="sm"
+  1506→                  className={editCollege.isVerified ? 'bg-emerald-600 hover:bg-emerald-700 text-white gap-1' : 'gap-1'}
+  1507→                  onClick={() => setEditCollege((p) => p ? { ...p, isVerified: !p.isVerified } : p)}
+  1508→                >
+  1509→                  {editCollege.isVerified ? <CheckCircle2 className="size-3.5" /> : <X className="size-3.5" />}
+  1510→                  {editCollege.isVerified ? 'Verified' : 'Unverified'}
+  1511→                </Button>
+  1512→              </div>
+  1513→            </div>
+  1514→          )}
+  1515→          <DialogFooter>
+  1516→            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+  1517→            <Button
+  1518→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1519→              disabled={!editCollege?.name?.trim() || adminActionMutation.isPending}
+  1520→              onClick={handleUpdateCollege}
+  1521→            >
+  1522→              {adminActionMutation.isPending ? 'Saving...' : 'Save Changes'}
+  1523→            </Button>
+  1524→          </DialogFooter>
+  1525→        </DialogContent>
+  1526→      </Dialog>
+  1527→
+  1528→      {/* Delete Confirmation Dialog */}
+  1529→      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+  1530→        <AlertDialogContent>
+  1531→          <AlertDialogHeader>
+  1532→            <AlertDialogTitle>Delete College</AlertDialogTitle>
+  1533→            <AlertDialogDescription>
+  1534→              Are you sure you want to delete &quot;{collegeToDelete?.name}&quot;? This action cannot be undone.
+  1535→              Colleges with departments or notes assigned cannot be deleted.
+  1536→            </AlertDialogDescription>
+  1537→          </AlertDialogHeader>
+  1538→          <AlertDialogFooter>
+  1539→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1540→            <AlertDialogAction
+  1541→              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+  1542→              disabled={adminActionMutation.isPending}
+  1543→              onClick={handleDeleteCollege}
+  1544→            >
+  1545→              {adminActionMutation.isPending ? 'Deleting...' : 'Delete College'}
+  1546→            </AlertDialogAction>
+  1547→          </AlertDialogFooter>
+  1548→        </AlertDialogContent>
+  1549→      </AlertDialog>
+  1550→    </div>
+  1551→  );
+  1552→}
+  1553→

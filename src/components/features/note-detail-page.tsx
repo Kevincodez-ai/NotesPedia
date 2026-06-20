@@ -1167,10 +1167,15 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" asChild>
-            <a href={note.filePath || '#'} target="_blank" rel="noopener noreferrer">
-              <Download className="size-4" /> Download
-            </a>
+          <Button
+            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            onClick={() => {
+              const link = document.createElement('a');
+              link.href = `/api/download/${note.id}`;
+              link.click();
+            }}
+          >
+            <Download className="size-4" /> Download
           </Button>
           <Button
             variant="outline"

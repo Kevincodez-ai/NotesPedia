@@ -123,7 +123,7 @@ async function markAllAsRead() {
   const res = await fetch('/api/notifications', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markAll: true }),
+    body: JSON.stringify({ markAllRead: true }),
   });
   if (!res.ok) throw new Error('Failed to mark all as read');
   return res.json();

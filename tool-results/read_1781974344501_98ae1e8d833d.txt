@@ -1,0 +1,672 @@
+    50→  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    51→};
+    52→
+    53→// ── Local Storage for recent searches ───────────────────────────
+    54→const RECENT_KEY = 'notespedia-recent-searches';
+    55→
+    56→function getRecentSearches(): string[] {
+    57→  if (typeof window === 'undefined') return [];
+    58→  try {
+    59→    const stored = localStorage.getItem(RECENT_KEY);
+    60→    return stored ? JSON.parse(stored) : [];
+    61→  } catch {
+    62→    return [];
+    63→  }
+    64→}
+    65→
+    66→function addRecentSearch(query: string) {
+    67→  if (!query.trim()) return;
+    68→  try {
+    69→    const recent = getRecentSearches().filter((s) => s !== query.trim());
+    70→    recent.unshift(query.trim());
+    71→    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, 8)));
+    72→  } catch {
+    73→    // Silently fail
+    74→  }
+    75→}
+    76→
+    77→function clearRecentSearches() {
+    78→  try {
+    79→    localStorage.removeItem(RECENT_KEY);
+    80→  } catch {
+    81→    // Silently fail
+    82→  }
+    83→}
+    84→
+    85→// ── Fetchers ────────────────────────────────────────────────────
+    86→async function fetchSearch(params: Record<string, string>) {
+    87→  const qs = new URLSearchParams(params).toString();
+    88→  const res = await fetch(`/api/search?${qs}`);
+    89→  if (!res.ok) throw new Error('Failed to search');
+    90→  return res.json();
+    91→}
+    92→
+    93→async function fetchColleges() {
+    94→  const res = await fetch('/api/colleges?limit=100');
+    95→  if (!res.ok) throw new Error('Failed');
+    96→  return res.json();
+    97→}
+    98→
+    99→async function fetchSubjects() {
+   100→  const res = await fetch('/api/subjects?limit=100');
+   101→  if (!res.ok) throw new Error('Failed');
+   102→  return res.json();
+   103→}
+   104→
+   105→// ── Note Card ───────────────────────────────────────────────────
+   106→function NoteCardItem({ note, onClick, onBookmark }: { note: NoteCard; onClick: () => void; onBookmark: (e: React.MouseEvent) => void }) {
+   107→  return (
+   108→    <motion.div
+   109→      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+   110→      whileTap={{ scale: 0.98 }}
+   111→      className="cursor-pointer"
+   112→      onClick={onClick}
+   113→    >
+   114→      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
+   115→        <div className={`h-1 w-full ${fileTypeColor(note.fileType)}`} />
+   116→        <CardContent className="p-4 space-y-3">
+   117→          <div className="flex items-start gap-3">
+   118→            <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
+   119→            <div className="min-w-0 flex-1">
+   120→              <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+   121→                {note.title}
+   122→              </h3>
+   123→              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+   124→                {note.subject && (
+   125→                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   126→                    {note.subject.name}
+   127→                  </Badge>
+   128→                )}
+   129→                {note.semester && (
+   130→                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+   131→                    Sem {note.semester}
+   132→                  </Badge>
+   133→                )}
+   134→                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+   135→                  {fileTypeLabel(note.fileType)}
+   136→                </Badge>
+   137→              </div>
+   138→            </div>
+   139→          </div>
+   140→
+   141→          {note.description && (
+   142→            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{note.description}</p>
+   143→          )}
+   144→
+   145→          {note.tags && note.tags.length > 0 && (
+   146→            <div className="flex flex-wrap gap-1">
+   147→              {note.tags.slice(0, 3).map((tag) => (
+   148→                <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+   149→                  #{tag}
+   150→                </Badge>
+   151→              ))}
+   152→              {note.tags.length > 3 && (
+   153→                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+   154→                  +{note.tags.length - 3}
+   155→                </Badge>
+   156→              )}
+   157→            </div>
+   158→          )}
+   159→
+   160→          <div className="flex items-center gap-2 pt-0.5">
+   161→            <Avatar className="size-5">
+   162→              {note.uploader.avatarUrl && <AvatarImage src={note.uploader.avatarUrl} />}
+   163→              <AvatarFallback className="text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   164→                {note.uploader.name.charAt(0)}
+   165→              </AvatarFallback>
+   166→            </Avatar>
+   167→            <span className="text-[11px] text-muted-foreground truncate">{note.uploader.name}</span>
+   168→            <span className="ml-auto text-[10px] text-muted-foreground">{formatRelativeTime(note.createdAt)}</span>
+   169→          </div>
+   170→
+   171→          <div className="flex items-center justify-between pt-0.5">
+   172→            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+   173→              <span className="flex items-center gap-0.5"><Download className="size-3" />{note.downloadCount}</span>
+   174→              <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{note.avgRating > 0 ? note.avgRating.toFixed(1) : '—'}</span>
+   175→              <span className="flex items-center gap-0.5"><Eye className="size-3" />{note.viewCount}</span>
+   176→            </div>
+   177→            <Button
+   178→              variant="ghost"
+   179→              size="icon"
+   180→              className="size-7 rounded-full hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   181→              onClick={onBookmark}
+   182→            >
+   183→              <Bookmark className={`size-3.5 ${note.isBookmarked ? 'fill-emerald-500 text-emerald-500' : 'text-muted-foreground'}`} />
+   184→            </Button>
+   185→          </div>
+   186→        </CardContent>
+   187→      </Card>
+   188→    </motion.div>
+   189→  );
+   190→}
+   191→
+   192→// ── Note Grid Skeleton ──────────────────────────────────────────
+   193→function NoteGridSkeleton() {
+   194→  return (
+   195→    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   196→      {Array.from({ length: 9 }).map((_, i) => (
+   197→        <Card key={i} className="border-0 shadow-sm">
+   198→          <div className="h-1 w-full bg-muted" />
+   199→          <CardContent className="p-4 space-y-3">
+   200→            <div className="flex items-start gap-3">
+   201→              <Skeleton className="size-8 rounded" />
+   202→              <div className="flex-1 space-y-2">
+   203→                <Skeleton className="h-4 w-3/4" />
+   204→                <div className="flex gap-1.5">
+   205→                  <Skeleton className="h-4 w-14 rounded-full" />
+   206→                  <Skeleton className="h-4 w-10 rounded-full" />
+   207→                </div>
+   208→              </div>
+   209→            </div>
+   210→            <Skeleton className="h-3 w-full" />
+   211→            <Skeleton className="h-3 w-2/3" />
+   212→            <div className="flex items-center gap-2">
+   213→              <Skeleton className="size-5 rounded-full" />
+   214→              <Skeleton className="h-3 w-20" />
+   215→            </div>
+   216→          </CardContent>
+   217→        </Card>
+   218→      ))}
+   219→    </div>
+   220→  );
+   221→}
+   222→
+   223→// ── Main Search Page ────────────────────────────────────────────
+   224→export function SearchPage() {
+   225→  const { navigate, searchQuery: storeQuery, setSearchQuery } = useAppStore();
+   226→  const queryClient = useQueryClient();
+   227→
+   228→  // Search state — storeQuery is the source of truth, inputValue mirrors it
+   229→  const [inputValue, setInputValue] = useState(storeQuery || '');
+   230→  const [debouncedQuery, setDebouncedQuery] = useState(storeQuery || '');
+   231→  const [filtersOpen, setFiltersOpen] = useState(false);
+   232→  const [collegeId, setCollegeId] = useState<string>('_all');
+   233→  const [departmentId, setDepartmentId] = useState<string>('_all');
+   234→  const [subjectId, setSubjectId] = useState<string>('_all');
+   235→  const [semester, setSemester] = useState<string>('_all');
+   236→  const [fileType, setFileType] = useState<string>('_all');
+   237→  const [sortBy, setSortBy] = useState<string>('relevance');
+   238→  const [page, setPage] = useState(1);
+   239→  const [recentSearches, setRecentSearches] = useState<string[]>(() => getRecentSearches());
+   240→  const limit = 12;
+   241→  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+   242→
+   243→  // Debounce input → trigger search
+   244→  const handleInputChange = useCallback((value: string) => {
+   245→    setInputValue(value);
+   246→    setSearchQuery(value);
+   247→    if (debounceRef.current) clearTimeout(debounceRef.current);
+   248→    debounceRef.current = setTimeout(() => {
+   249→      setDebouncedQuery(value);
+   250→      setPage(1);
+   251→    }, 300);
+   252→  }, [setSearchQuery]);
+   253→
+   254→  // Clear search
+   255→  const handleClear = useCallback(() => {
+   256→    setInputValue('');
+   257→    setDebouncedQuery('');
+   258→    setSearchQuery('');
+   259→    setPage(1);
+   260→  }, [setSearchQuery]);
+   261→
+   262→  // Submit search (Enter key)
+   263→  const handleSubmit = useCallback(() => {
+   264→    if (debouncedQuery.trim()) {
+   265→      addRecentSearch(debouncedQuery);
+   266→      setRecentSearches(getRecentSearches());
+   267→    }
+   268→  }, [debouncedQuery]);
+   269→
+   270→  // Click recent search
+   271→  const handleRecentClick = useCallback((query: string) => {
+   272→    setInputValue(query);
+   273→    setDebouncedQuery(query);
+   274→    setSearchQuery(query);
+   275→    setPage(1);
+   276→  }, [setSearchQuery]);
+   277→
+   278→  // Trending tags
+   279→  const trendingTags = ['Data Structures', 'Machine Learning', 'Calculus', 'Thermodynamics', 'Organic Chemistry', 'Microeconomics', 'Discrete Math', 'Operating Systems'];
+   280→
+   281→  // Fetch colleges & subjects for filters
+   282→  const { data: collegesData } = useQuery({
+   283→    queryKey: ['search-colleges'],
+   284→    queryFn: fetchColleges,
+   285→  });
+   286→  const { data: subjectsData } = useQuery({
+   287→    queryKey: ['search-subjects'],
+   288→    queryFn: fetchSubjects,
+   289→  });
+   290→
+   291→  // Build search query params
+   292→  const hasActiveQuery = debouncedQuery.trim().length > 0;
+   293→  const queryParams: Record<string, string> = {
+   294→    q: debouncedQuery.trim(),
+   295→    page: String(page),
+   296→    limit: String(limit),
+   297→    sortBy,
+   298→  };
+   299→  if (collegeId && collegeId !== '_all') queryParams.collegeId = collegeId;
+   300→  if (departmentId && departmentId !== '_all') queryParams.departmentId = departmentId;
+   301→  if (subjectId && subjectId !== '_all') queryParams.subjectId = subjectId;
+   302→  if (semester && semester !== '_all') queryParams.semester = semester;
+   303→  if (fileType && fileType !== '_all') queryParams.fileType = fileType;
+   304→
+   305→  // Fetch search results
+   306→  const { data: searchData, isLoading, isError } = useQuery({
+   307→    queryKey: ['search', queryParams],
+   308→    queryFn: () => fetchSearch(queryParams),
+   309→    enabled: hasActiveQuery,
+   310→  });
+   311→
+   312→  const notes: NoteCard[] = searchData?.notes ?? [];
+   313→  const totalPages: number = searchData?.totalPages ?? 1;
+   314→  const total: number = searchData?.total ?? 0;
+   315→  const hasFilters = collegeId !== '_all' || departmentId !== '_all' || subjectId !== '_all' || semester !== '_all' || fileType !== '_all';
+   316→
+   317→  // Bookmark handler
+   318→  const handleBookmark = useCallback(async (e: React.MouseEvent, note: NoteCard) => {
+   319→    e.stopPropagation();
+   320→    try {
+   321→      if (note.isBookmarked) {
+   322→        await fetch(`/api/bookmarks?noteId=${note.id}`, { method: 'DELETE' });
+   323→      } else {
+   324→        await fetch('/api/bookmarks', {
+   325→          method: 'POST',
+   326→          headers: { 'Content-Type': 'application/json' },
+   327→          body: JSON.stringify({ noteId: note.id }),
+   328→        });
+   329→      }
+   330→      queryClient.invalidateQueries({ queryKey: ['notes'] });
+   331→      queryClient.invalidateQueries({ queryKey: ['search'] });
+   332→      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+   333→    } catch {
+   334→      // Silently fail
+   335→    }
+   336→  }, [queryClient]);
+   337→
+   338→  const clearFilters = () => {
+   339→    setCollegeId('_all');
+   340→    setDepartmentId('_all');
+   341→    setSubjectId('_all');
+   342→    setSemester('_all');
+   343→    setFileType('_all');
+   344→    setSortBy('relevance');
+   345→    setPage(1);
+   346→  };
+   347→
+   348→  const clearRecent = () => {
+   349→    clearRecentSearches();
+   350→    setRecentSearches([]);
+   351→  };
+   352→
+   353→  // Departments for selected college
+   354→  const departments = (collegesData?.colleges ?? []).find(
+   355→    (c: { id: string }) => c.id === collegeId
+   356→  )?.departments ?? [];
+   357→
+   358→  return (
+   359→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+   360→      {/* ── Header & Search Input ──────────────────── */}
+   361→      <motion.div
+   362→        initial={{ opacity: 0, y: -10 }}
+   363→        animate={{ opacity: 1, y: 0 }}
+   364→        className="space-y-4"
+   365→      >
+   366→        <div>
+   367→          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Search Notes</h1>
+   368→          <p className="text-sm text-muted-foreground mt-0.5">Find academic resources across all colleges and subjects</p>
+   369→        </div>
+   370→
+   371→        {/* Large search input */}
+   372→        <div className="relative">
+   373→          <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+   374→          <Input
+   375→            type="text"
+   376→            value={inputValue}
+   377→            onChange={(e) => handleInputChange(e.target.value)}
+   378→            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+   379→            placeholder="Search notes by title, description, or content..."
+   380→            className="h-12 pl-12 pr-12 text-base rounded-xl border-2 focus:border-emerald-500 dark:focus:border-emerald-400 transition-colors"
+   381→          />
+   382→          {inputValue && (
+   383→            <Button
+   384→              variant="ghost"
+   385→              size="icon"
+   386→              className="absolute right-2 top-1/2 -translate-y-1/2 size-8 rounded-full hover:bg-muted"
+   387→              onClick={handleClear}
+   388→            >
+   389→              <X className="size-4" />
+   390→            </Button>
+   391→          )}
+   392→        </div>
+   393→      </motion.div>
+   394→
+   395→      {/* ── Collapsible Filter Panel ───────────────── */}
+   396→      <motion.div
+   397→        initial={{ opacity: 0, y: 5 }}
+   398→        animate={{ opacity: 1, y: 0 }}
+   399→        transition={{ delay: 0.1 }}
+   400→      >
+   401→        <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+   402→          <div className="flex items-center justify-between">
+   403→            <CollapsibleTrigger asChild>
+   404→              <Button variant="outline" size="sm" className="gap-2">
+   405→                <SlidersHorizontal className="size-4" />
+   406→                Filters
+   407→                {hasFilters && (
+   408→                  <Badge className="ml-1 size-5 p-0 text-[10px] flex items-center justify-center bg-emerald-600 text-white">
+   409→                    {[collegeId !== '_all', departmentId !== '_all', subjectId !== '_all', semester !== '_all', fileType !== '_all'].filter(Boolean).length}
+   410→                  </Badge>
+   411→                )}
+   412→              </Button>
+   413→            </CollapsibleTrigger>
+   414→            {hasFilters && (
+   415→              <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={clearFilters}>
+   416→                <X className="size-3" /> Clear filters
+   417→              </Button>
+   418→            )}
+   419→          </div>
+   420→          <CollapsibleContent>
+   421→            <Card className="mt-3 border-0 shadow-sm">
+   422→              <CardContent className="p-4">
+   423→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+   424→                  {/* College */}
+   425→                  <Select value={collegeId} onValueChange={(v) => { setCollegeId(v); setDepartmentId('_all'); setPage(1); }}>
+   426→                    <SelectTrigger className="h-9 text-xs">
+   427→                      <SelectValue placeholder="College" />
+   428→                    </SelectTrigger>
+   429→                    <SelectContent>
+   430→                      <SelectItem value="_all">All Colleges</SelectItem>
+   431→                      {(collegesData?.colleges ?? []).map((c: { id: string; name: string }) => (
+   432→                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+   433→                      ))}
+   434→                    </SelectContent>
+   435→                  </Select>
+   436→
+   437→                  {/* Department */}
+   438→                  <Select value={departmentId} onValueChange={(v) => { setDepartmentId(v); setPage(1); }}>
+   439→                    <SelectTrigger className="h-9 text-xs">
+   440→                      <SelectValue placeholder="Department" />
+   441→                    </SelectTrigger>
+   442→                    <SelectContent>
+   443→                      <SelectItem value="_all">All Departments</SelectItem>
+   444→                      {departments.map((d: { id: string; name: string }) => (
+   445→                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+   446→                      ))}
+   447→                    </SelectContent>
+   448→                  </Select>
+   449→
+   450→                  {/* Subject */}
+   451→                  <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setPage(1); }}>
+   452→                    <SelectTrigger className="h-9 text-xs">
+   453→                      <SelectValue placeholder="Subject" />
+   454→                    </SelectTrigger>
+   455→                    <SelectContent>
+   456→                      <SelectItem value="_all">All Subjects</SelectItem>
+   457→                      {(subjectsData?.subjects ?? []).map((s: { id: string; name: string }) => (
+   458→                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+   459→                      ))}
+   460→                    </SelectContent>
+   461→                  </Select>
+   462→
+   463→                  {/* Semester */}
+   464→                  <Select value={semester} onValueChange={(v) => { setSemester(v); setPage(1); }}>
+   465→                    <SelectTrigger className="h-9 text-xs">
+   466→                      <SelectValue placeholder="Semester" />
+   467→                    </SelectTrigger>
+   468→                    <SelectContent>
+   469→                      <SelectItem value="_all">All Semesters</SelectItem>
+   470→                      {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+   471→                        <SelectItem key={s} value={String(s)}>Sem {s}</SelectItem>
+   472→                      ))}
+   473→                    </SelectContent>
+   474→                  </Select>
+   475→
+   476→                  {/* File Type */}
+   477→                  <Select value={fileType} onValueChange={(v) => { setFileType(v); setPage(1); }}>
+   478→                    <SelectTrigger className="h-9 text-xs">
+   479→                      <SelectValue placeholder="File type" />
+   480→                    </SelectTrigger>
+   481→                    <SelectContent>
+   482→                      <SelectItem value="_all">All Types</SelectItem>
+   483→                      <SelectItem value="pdf">PDF</SelectItem>
+   484→                      <SelectItem value="docx">DOCX</SelectItem>
+   485→                      <SelectItem value="pptx">PPTX</SelectItem>
+   486→                      <SelectItem value="txt">TXT</SelectItem>
+   487→                      <SelectItem value="md">Markdown</SelectItem>
+   488→                      <SelectItem value="image">Image</SelectItem>
+   489→                    </SelectContent>
+   490→                  </Select>
+   491→
+   492→                  {/* Sort By */}
+   493→                  <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
+   494→                    <SelectTrigger className="h-9 text-xs">
+   495→                      <SelectValue placeholder="Sort by" />
+   496→                    </SelectTrigger>
+   497→                    <SelectContent>
+   498→                      <SelectItem value="relevance">Relevance</SelectItem>
+   499→                      <SelectItem value="newest">Newest</SelectItem>
+   500→                      <SelectItem value="downloads">Downloads</SelectItem>
+   501→                      <SelectItem value="rating">Rating</SelectItem>
+   502→                      <SelectItem value="views">Views</SelectItem>
+   503→                    </SelectContent>
+   504→                  </Select>
+   505→                </div>
+   506→              </CardContent>
+   507→            </Card>
+   508→          </CollapsibleContent>
+   509→        </Collapsible>
+   510→      </motion.div>
+   511→
+   512→      {/* ── No Active Query State ──────────────────── */}
+   513→      {!hasActiveQuery && (
+   514→        <motion.div
+   515→          initial={{ opacity: 0, y: 10 }}
+   516→          animate={{ opacity: 1, y: 0 }}
+   517→          transition={{ delay: 0.2 }}
+   518→          className="space-y-8"
+   519→        >
+   520→          {/* Recent Searches */}
+   521→          {recentSearches.length > 0 && (
+   522→            <section>
+   523→              <div className="flex items-center justify-between mb-3">
+   524→                <div className="flex items-center gap-2">
+   525→                  <Clock className="size-4 text-muted-foreground" />
+   526→                  <h2 className="text-sm font-semibold">Recent Searches</h2>
+   527→                </div>
+   528→                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={clearRecent}>
+   529→                  Clear all
+   530→                </Button>
+   531→              </div>
+   532→              <div className="flex flex-wrap gap-2">
+   533→                {recentSearches.map((query) => (
+   534→                  <motion.button
+   535→                    key={query}
+   536→                    whileHover={{ scale: 1.05 }}
+   537→                    whileTap={{ scale: 0.95 }}
+   538→                    onClick={() => handleRecentClick(query)}
+   539→                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 hover:bg-muted text-xs font-medium transition-colors"
+   540→                  >
+   541→                    <Clock className="size-3 text-muted-foreground" />
+   542→                    {query}
+   543→                  </motion.button>
+   544→                ))}
+   545→              </div>
+   546→            </section>
+   547→          )}
+   548→
+   549→          {/* Trending Tags */}
+   550→          <section>
+   551→            <div className="flex items-center gap-2 mb-3">
+   552→              <TrendingUp className="size-4 text-emerald-600" />
+   553→              <h2 className="text-sm font-semibold">Trending Topics</h2>
+   554→              <Sparkles className="size-3.5 text-amber-500" />
+   555→            </div>
+   556→            <div className="flex flex-wrap gap-2">
+   557→              {trendingTags.map((tag) => (
+   558→                <motion.button
+   559→                  key={tag}
+   560→                  whileHover={{ scale: 1.05 }}
+   561→                  whileTap={{ scale: 0.95 }}
+   562→                  onClick={() => handleRecentClick(tag)}
+   563→                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium transition-colors border border-emerald-200 dark:border-emerald-800"
+   564→                >
+   565→                  <TrendingUp className="size-3" />
+   566→                  {tag}
+   567→                </motion.button>
+   568→              ))}
+   569→            </div>
+   570→          </section>
+   571→
+   572→          {/* Search prompt */}
+   573→          <div className="flex flex-col items-center justify-center py-12 text-center">
+   574→            <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 p-6 mb-4">
+   575→              <Search className="size-10 text-emerald-600" />
+   576→            </div>
+   577→            <h3 className="font-semibold text-lg">Search for Notes</h3>
+   578→            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   579→              Type a keyword above to search across thousands of academic notes, summaries, and study materials.
+   580→            </p>
+   581→          </div>
+   582→        </motion.div>
+   583→      )}
+   584→
+   585→      {/* ── Search Results ─────────────────────────── */}
+   586→      {hasActiveQuery && (
+   587→        <>
+   588→          {/* Result count */}
+   589→          <motion.div
+   590→            initial={{ opacity: 0 }}
+   591→            animate={{ opacity: 1 }}
+   592→            className="flex items-center justify-between"
+   593→          >
+   594→            <div className="text-sm text-muted-foreground">
+   595→              {isLoading ? (
+   596→                <Skeleton className="h-4 w-32 inline-block" />
+   597→              ) : (
+   598→                <>
+   599→                  <span className="font-semibold text-foreground">{total}</span>
+   600→                  {' '}result{total !== 1 ? 's' : ''} for &quot;{debouncedQuery}&quot;
+   601→                </>
+   602→              )}
+   603→            </div>
+   604→          </motion.div>
+   605→
+   606→          {/* Results grid */}
+   607→          {isLoading ? (
+   608→            <NoteGridSkeleton />
+   609→          ) : isError ? (
+   610→            <motion.div
+   611→              initial={{ opacity: 0, y: 10 }}
+   612→              animate={{ opacity: 1, y: 0 }}
+   613→              className="flex flex-col items-center justify-center py-16 text-center"
+   614→            >
+   615→              <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+   616→                <FileText className="size-8 text-destructive" />
+   617→              </div>
+   618→              <h3 className="font-semibold">Search failed</h3>
+   619→              <p className="text-sm text-muted-foreground mt-1">Something went wrong. Please try again.</p>
+   620→              <Button variant="outline" size="sm" className="mt-4" onClick={() => queryClient.invalidateQueries({ queryKey: ['search'] })}>
+   621→                Retry
+   622→              </Button>
+   623→            </motion.div>
+   624→          ) : notes.length === 0 ? (
+   625→            <motion.div
+   626→              initial={{ opacity: 0, y: 10 }}
+   627→              animate={{ opacity: 1, y: 0 }}
+   628→              className="flex flex-col items-center justify-center py-16 text-center"
+   629→            >
+   630→              <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   631→                <Search className="size-8 text-muted-foreground" />
+   632→              </div>
+   633→              <h3 className="font-semibold">No results found</h3>
+   634→              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   635→                Try different keywords, remove some filters, or check your spelling.
+   636→              </p>
+   637→              {hasFilters && (
+   638→                <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={clearFilters}>
+   639→                  <X className="size-3.5" /> Clear Filters
+   640→                </Button>
+   641→              )}
+   642→            </motion.div>
+   643→          ) : (
+   644→            <motion.div
+   645→              variants={gridContainer}
+   646→              initial="hidden"
+   647→              animate="show"
+   648→              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+   649→            >
+   650→              <AnimatePresence mode="popLayout">
+   651→                {notes.map((note) => (
+   652→                  <motion.div key={note.id} variants={gridItem} layout>
+   653→                    <NoteCardItem
+   654→                      note={note}
+   655→                      onClick={() => navigate('note-detail', { id: note.id })}
+   656→                      onBookmark={(e) => handleBookmark(e, note)}
+   657→                    />
+   658→                  </motion.div>
+   659→                ))}
+   660→              </AnimatePresence>
+   661→            </motion.div>
+   662→          )}
+   663→
+   664→          {/* Pagination */}
+   665→          {totalPages > 1 && (
+   666→            <motion.div
+   667→              initial={{ opacity: 0 }}
+   668→              animate={{ opacity: 1 }}
+   669→              className="flex items-center justify-center gap-2 pt-2"
+   670→            >
+   671→              <Button
+   672→                variant="outline"
+   673→                size="sm"
+   674→                disabled={page <= 1}
+   675→                onClick={() => setPage((p) => Math.max(1, p - 1))}
+   676→                className="gap-1"
+   677→              >
+   678→                <ChevronLeft className="size-4" /> Previous
+   679→              </Button>
+   680→              <div className="flex items-center gap-1 px-2">
+   681→                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+   682→                  let pageNum: number;
+   683→                  if (totalPages <= 5) {
+   684→                    pageNum = i + 1;
+   685→                  } else if (page <= 3) {
+   686→                    pageNum = i + 1;
+   687→                  } else if (page >= totalPages - 2) {
+   688→                    pageNum = totalPages - 4 + i;
+   689→                  } else {
+   690→                    pageNum = page - 2 + i;
+   691→                  }
+   692→                  return (
+   693→                    <Button
+   694→                      key={pageNum}
+   695→                      variant={page === pageNum ? 'default' : 'ghost'}
+   696→                      size="sm"
+   697→                      className={`size-8 p-0 text-xs ${page === pageNum ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
+   698→                      onClick={() => setPage(pageNum)}
+   699→                    >
+   700→                      {pageNum}
+   701→                    </Button>
+   702→                  );
+   703→                })}
+   704→              </div>
+   705→              <Button
+   706→                variant="outline"
+   707→                size="sm"
+   708→                disabled={page >= totalPages}
+   709→                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+   710→                className="gap-1"
+   711→              >
+   712→                Next <ChevronRight className="size-4" />
+   713→              </Button>
+   714→            </motion.div>
+   715→          )}
+   716→        </>
+   717→      )}
+   718→    </div>
+   719→  );
+   720→}
+   721→

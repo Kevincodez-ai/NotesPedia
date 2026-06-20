@@ -195,7 +195,7 @@ export function DashboardPage() {
   // Fetch user's uploaded notes
   const { data: myNotesData } = useQuery({
     queryKey: ['notes', 'my-uploads'],
-    queryFn: () => fetchNotes('uploaderId=me&limit=100'),
+    queryFn: () => fetchNotes(`uploaderId=${user?.id || ''}&limit=100`),
   });
 
   // Fetch bookmarks count

@@ -145,6 +145,36 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
+
+    // Handle password change
+    if (body.action === 'changePassword' || (body.currentPassword && body.newPassword)) {
+      const { currentPassword, newPassword } = body;
+      if (!currentPassword || !newPassword) {
+        return NextResponse.json({ success: false, error: 'Current password and new password are required' }, { status: 400 });
+      }
+      if (newPassword.length < 6) {
+        return NextResponse.json({ success: false, error: 'New password must be at least 6 characters' }, { status: 400 });
+      }
+
+      const fullUser = await db.user.findUnique({ where: { id: user.id } });
+      if (!fullUser || !fullUser.passwordHash) {
+        return NextResponse.json({ success: false, error: 'Cannot change password for this account' }, { status: 400 });
+      }
+
+      const isValid = await verifyPassword(currentPassword, fullUser.passwordHash);
+      if (!isValid) {
+        return NextResponse.json({ success: false, error: 'Current password is incorrect' }, { status: 400 });
+      }
+
+      const newPasswordHash = await hashPassword(newPassword);
+      await db.user.update({
+        where: { id: user.id },
+        data: { passwordHash: newPasswordHash },
+      });
+
+      return NextResponse.json({ success: true, message: 'Password changed successfully' });
+    }
+
     const data = updateProfileSchema.parse(body);
 
     // Update User table fields

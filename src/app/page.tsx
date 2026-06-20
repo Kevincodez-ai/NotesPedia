@@ -13,7 +13,6 @@ import { BookmarksPage } from '@/components/features/bookmarks-page';
 import { NotificationsPage } from '@/components/features/notifications-page';
 import { LeaderboardPage } from '@/components/features/leaderboard-page';
 import { SearchPage } from '@/components/features/search-page';
-import { StudyGroupsPage } from '@/components/features/study-groups-page';
 import { AdminPage } from '@/components/features/admin-page';
 import { SettingsPage } from '@/components/features/settings-page';
 import { ProfilePage } from '@/components/features/profile-page';
@@ -80,8 +79,6 @@ export default function Home() {
         return <LeaderboardPage />;
       case 'search':
         return <SearchPage />;
-      case 'study-groups':
-        return <StudyGroupsPage />;
       case 'admin':
         return <AdminPage />;
       case 'settings':

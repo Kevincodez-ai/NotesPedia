@@ -1,0 +1,789 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useCallback } from 'react';
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/store/app-store';
+     6→import { motion, AnimatePresence } from 'framer-motion';
+     7→import {
+     8→  Users,
+     9→  Plus,
+    10→  Search,
+    11→  Globe,
+    12→  Lock,
+    13→  LogOut,
+    14→  UserPlus,
+    15→  MessageSquare,
+    16→  Share2,
+    17→  BookOpen,
+    18→  X,
+    19→  Send,
+    20→  ChevronRight,
+    21→} from 'lucide-react';
+    22→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    23→import { Button } from '@/components/ui/button';
+    24→import { Badge } from '@/components/ui/badge';
+    25→import { Skeleton } from '@/components/ui/skeleton';
+    26→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    27→import { Input } from '@/components/ui/input';
+    28→import { Textarea } from '@/components/ui/textarea';
+    29→import { Label } from '@/components/ui/label';
+    30→import { Switch } from '@/components/ui/switch';
+    31→import { Separator } from '@/components/ui/separator';
+    32→import { ScrollArea } from '@/components/ui/scroll-area';
+    33→import {
+    34→  Select,
+    35→  SelectContent,
+    36→  SelectItem,
+    37→  SelectTrigger,
+    38→  SelectValue,
+    39→} from '@/components/ui/select';
+    40→import {
+    41→  Dialog,
+    42→  DialogContent,
+    43→  DialogDescription,
+    44→  DialogFooter,
+    45→  DialogHeader,
+    46→  DialogTitle,
+    47→} from '@/components/ui/dialog';
+    48→import { toast } from 'sonner';
+    49→import type { StudyGroupData } from '@/types';
+    50→
+    51→// ── Animation variants ──────────────────────────────────────────
+    52→const gridContainer = {
+    53→  hidden: { opacity: 0 },
+    54→  show: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
+    55→};
+    56→const gridItem = {
+    57→  hidden: { opacity: 0, y: 20 },
+    58→  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    59→};
+    60→
+    61→// ── Fetchers ────────────────────────────────────────────────────
+    62→async function fetchStudyGroups(params?: string) {
+    63→  const res = await fetch(`/api/study-groups?limit=100${params ? `&${params}` : ''}`);
+    64→  if (!res.ok) throw new Error('Failed to fetch study groups');
+    65→  return res.json();
+    66→}
+    67→
+    68→async function createGroup(data: Record<string, unknown>) {
+    69→  const res = await fetch('/api/study-groups', {
+    70→    method: 'POST',
+    71→    headers: { 'Content-Type': 'application/json' },
+    72→    body: JSON.stringify(data),
+    73→  });
+    74→  if (!res.ok) {
+    75→    const err = await res.json().catch(() => ({}));
+    76→    throw new Error(err.error || 'Failed to create group');
+    77→  }
+    78→  return res.json();
+    79→}
+    80→
+    81→async function joinLeaveGroup(groupId: string, action: 'join' | 'leave') {
+    82→  const res = await fetch('/api/study-groups', {
+    83→    method: 'PUT',
+    84→    headers: { 'Content-Type': 'application/json' },
+    85→    body: JSON.stringify({ groupId, action }),
+    86→  });
+    87→  if (!res.ok) {
+    88→    const err = await res.json().catch(() => ({}));
+    89→    throw new Error(err.error || `Failed to ${action} group`);
+    90→  }
+    91→  return res.json();
+    92→}
+    93→
+    94→async function fetchSubjects() {
+    95→  const res = await fetch('/api/subjects?limit=100');
+    96→  if (!res.ok) throw new Error('Failed');
+    97→  return res.json();
+    98→}
+    99→
+   100→// ── Grid Skeleton ───────────────────────────────────────────────
+   101→function GroupGridSkeleton() {
+   102→  return (
+   103→    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   104→      {Array.from({ length: 6 }).map((_, i) => (
+   105→        <Card key={i} className="border-0 shadow-sm">
+   106→          <CardContent className="p-5 space-y-3">
+   107→            <div className="flex items-start gap-3">
+   108→              <Skeleton className="size-10 rounded-lg" />
+   109→              <div className="flex-1 space-y-2">
+   110→                <Skeleton className="h-4 w-3/4" />
+   111→                <Skeleton className="h-3 w-1/2" />
+   112→              </div>
+   113→            </div>
+   114→            <Skeleton className="h-3 w-full" />
+   115→            <Skeleton className="h-3 w-2/3" />
+   116→            <div className="flex gap-2">
+   117→              <Skeleton className="h-5 w-16 rounded-full" />
+   118→              <Skeleton className="h-5 w-12 rounded-full" />
+   119→            </div>
+   120→            <Skeleton className="h-8 w-full rounded-md" />
+   121→          </CardContent>
+   122→        </Card>
+   123→      ))}
+   124→    </div>
+   125→  );
+   126→}
+   127→
+   128→// ── Group Card ──────────────────────────────────────────────────
+   129→function GroupCard({
+   130→  group,
+   131→  onJoinLeave,
+   132→  onViewDetails,
+   133→}: {
+   134→  group: StudyGroupData & { actualMemberCount?: number };
+   135→  onJoinLeave: (groupId: string, isMember: boolean) => void;
+   136→  onViewDetails: (group: StudyGroupData) => void;
+   137→}) {
+   138→  const memberCount = group.actualMemberCount ?? group.memberCount;
+   139→  const isFull = memberCount >= group.maxMembers;
+   140→  const progressPercent = Math.min((memberCount / group.maxMembers) * 100, 100);
+   141→
+   142→  return (
+   143→    <motion.div
+   144→      variants={gridItem}
+   145→      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+   146→      whileTap={{ scale: 0.98 }}
+   147→    >
+   148→      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group cursor-pointer">
+   149→        {/* Top color bar */}
+   150→        <div className={`h-1.5 w-full ${group.isPublic ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+   151→        <CardContent className="p-5 space-y-3">
+   152→          {/* Header */}
+   153→          <div className="flex items-start gap-3">
+   154→            <div className={`rounded-lg p-2 shrink-0 ${group.isPublic ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-amber-100 dark:bg-amber-900/30'}`}>
+   155→              {group.isPublic ? (
+   156→                <Globe className="size-5 text-emerald-600 dark:text-emerald-400" />
+   157→              ) : (
+   158→                <Lock className="size-5 text-amber-600 dark:text-amber-400" />
+   159→              )}
+   160→            </div>
+   161→            <div className="min-w-0 flex-1">
+   162→              <h3
+   163→                className="font-semibold text-sm leading-snug line-clamp-1 group-hover:text-primary transition-colors"
+   164→                onClick={() => onViewDetails(group)}
+   165→              >
+   166→                {group.name}
+   167→              </h3>
+   168→              {group.subject && (
+   169→                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 mt-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   170→                  {group.subject.name}
+   171→                </Badge>
+   172→              )}
+   173→            </div>
+   174→          </div>
+   175→
+   176→          {/* Description */}
+   177→          {group.description && (
+   178→            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+   179→              {group.description}
+   180→            </p>
+   181→          )}
+   182→
+   183→          {/* Member progress */}
+   184→          <div className="space-y-1">
+   185→            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+   186→              <span className="flex items-center gap-1">
+   187→                <Users className="size-3" /> {memberCount}/{group.maxMembers} members
+   188→              </span>
+   189→              {isFull && <Badge className="text-[8px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-1 py-0">Full</Badge>}
+   190→            </div>
+   191→            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+   192→              <motion.div
+   193→                className={`h-full rounded-full ${progressPercent >= 100 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+   194→                initial={{ width: 0 }}
+   195→                animate={{ width: `${progressPercent}%` }}
+   196→                transition={{ duration: 0.8, ease: 'easeOut' }}
+   197→              />
+   198→            </div>
+   199→          </div>
+   200→
+   201→          {/* Creator */}
+   202→          <div className="flex items-center gap-2">
+   203→            <Avatar className="size-5">
+   204→              {group.creator.avatarUrl && <AvatarImage src={group.creator.avatarUrl} />}
+   205→              <AvatarFallback className="text-[8px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   206→                {group.creator.name.charAt(0)}
+   207→              </AvatarFallback>
+   208→            </Avatar>
+   209→            <span className="text-[11px] text-muted-foreground">
+   210→              by {group.creator.name}
+   211→            </span>
+   212→          </div>
+   213→
+   214→          {/* Actions */}
+   215→          <div className="flex items-center gap-2 pt-1">
+   216→            <Button
+   217→              variant="outline"
+   218→              size="sm"
+   219→              className="flex-1 text-xs gap-1.5 h-8"
+   220→              onClick={(e) => {
+   221→                e.stopPropagation();
+   222→                onViewDetails(group);
+   223→              }}
+   224→            >
+   225→              <BookOpen className="size-3" /> View Details
+   226→            </Button>
+   227→            <Button
+   228→              size="sm"
+   229→              className={`flex-1 text-xs gap-1.5 h-8 ${
+   230→                group.isMember
+   231→                  ? 'bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive'
+   232→                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+   233→              }`}
+   234→              disabled={!group.isMember && isFull}
+   235→              onClick={(e) => {
+   236→                e.stopPropagation();
+   237→                onJoinLeave(group.id, !!group.isMember);
+   238→              }}
+   239→            >
+   240→              {group.isMember ? (
+   241→                <><LogOut className="size-3" /> Leave</>
+   242→              ) : (
+   243→                <><UserPlus className="size-3" /> Join</>
+   244→              )}
+   245→            </Button>
+   246→          </div>
+   247→        </CardContent>
+   248→      </Card>
+   249→    </motion.div>
+   250→  );
+   251→}
+   252→
+   253→// ── Group Detail Dialog ─────────────────────────────────────────
+   254→function GroupDetailDialog({
+   255→  group,
+   256→  open,
+   257→  onOpenChange,
+   258→  onJoinLeave,
+   259→}: {
+   260→  group: StudyGroupData | null;
+   261→  open: boolean;
+   262→  onOpenChange: (open: boolean) => void;
+   263→  onJoinLeave: (groupId: string, isMember: boolean) => void;
+   264→}) {
+   265→  const [newMessage, setNewMessage] = useState('');
+   266→  const [activeDetailTab, setActiveDetailTab] = useState('info');
+   267→
+   268→  if (!group) return null;
+   269→
+   270→  const memberCount = group.memberCount;
+   271→  const isFull = memberCount >= group.maxMembers;
+   272→
+   273→  // Mock messages for discussion board
+   274→  const mockMessages = [
+   275→    { id: '1', user: { name: 'Arjun Patel', avatarUrl: undefined }, content: 'Has anyone started Chapter 5 yet?', time: '2h ago' },
+   276→    { id: '2', user: { name: 'Priya Sharma', avatarUrl: undefined }, content: 'Yes! I have some good notes. Will share them here.', time: '1h ago' },
+   277→    { id: '3', user: { name: 'Rahul Kumar', avatarUrl: undefined }, content: 'Can we schedule a study session this weekend?', time: '30m ago' },
+   278→  ];
+   279→
+   280→  return (
+   281→    <Dialog open={open} onOpenChange={onOpenChange}>
+   282→      <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+   283→        <DialogHeader>
+   284→          <DialogTitle className="flex items-center gap-2">
+   285→            {group.isPublic ? (
+   286→              <Globe className="size-4 text-emerald-600" />
+   287→            ) : (
+   288→              <Lock className="size-4 text-amber-600" />
+   289→            )}
+   290→            {group.name}
+   291→          </DialogTitle>
+   292→          <DialogDescription>{group.description || 'No description provided.'}</DialogDescription>
+   293→        </DialogHeader>
+   294→
+   295→        {/* Detail tabs */}
+   296→        <div className="flex gap-1 border-b pb-0">
+   297→          {[
+   298→            { key: 'info', label: 'Info' },
+   299→            { key: 'members', label: `Members (${memberCount})` },
+   300→            { key: 'discussion', label: 'Discussion' },
+   301→            { key: 'resources', label: 'Resources' },
+   302→          ].map((tab) => (
+   303→            <button
+   304→              key={tab.key}
+   305→              onClick={() => setActiveDetailTab(tab.key)}
+   306→              className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-colors ${
+   307→                activeDetailTab === tab.key
+   308→                  ? 'border-emerald-500 text-emerald-600'
+   309→                  : 'border-transparent text-muted-foreground hover:text-foreground'
+   310→              }`}
+   311→            >
+   312→              {tab.label}
+   313→            </button>
+   314→          ))}
+   315→        </div>
+   316→
+   317→        <ScrollArea className="flex-1 -mx-6 px-6">
+   318→          {activeDetailTab === 'info' && (
+   319→            <div className="space-y-4 py-3">
+   320→              <div className="grid grid-cols-2 gap-3">
+   321→                <div className="p-3 rounded-lg bg-muted/50">
+   322→                  <p className="text-[10px] text-muted-foreground uppercase">Subject</p>
+   323→                  <p className="text-sm font-medium mt-0.5">{group.subject?.name || 'N/A'}</p>
+   324→                </div>
+   325→                <div className="p-3 rounded-lg bg-muted/50">
+   326→                  <p className="text-[10px] text-muted-foreground uppercase">Visibility</p>
+   327→                  <p className="text-sm font-medium mt-0.5">{group.isPublic ? 'Public' : 'Private'}</p>
+   328→                </div>
+   329→                <div className="p-3 rounded-lg bg-muted/50">
+   330→                  <p className="text-[10px] text-muted-foreground uppercase">Members</p>
+   331→                  <p className="text-sm font-medium mt-0.5">{memberCount}/{group.maxMembers}</p>
+   332→                </div>
+   333→                <div className="p-3 rounded-lg bg-muted/50">
+   334→                  <p className="text-[10px] text-muted-foreground uppercase">Created</p>
+   335→                  <p className="text-sm font-medium mt-0.5">{new Date(group.createdAt).toLocaleDateString()}</p>
+   336→                </div>
+   337→              </div>
+   338→              <div className="p-3 rounded-lg bg-muted/50">
+   339→                <p className="text-[10px] text-muted-foreground uppercase">Creator</p>
+   340→                <div className="flex items-center gap-2 mt-1">
+   341→                  <Avatar className="size-6">
+   342→                    {group.creator.avatarUrl && <AvatarImage src={group.creator.avatarUrl} />}
+   343→                    <AvatarFallback className="text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   344→                      {group.creator.name.charAt(0)}
+   345→                    </AvatarFallback>
+   346→                  </Avatar>
+   347→                  <p className="text-sm font-medium">{group.creator.name}</p>
+   348→                </div>
+   349→              </div>
+   350→            </div>
+   351→          )}
+   352→
+   353→          {activeDetailTab === 'members' && (
+   354→            <div className="space-y-2 py-3">
+   355→              {/* Creator */}
+   356→              <div className="flex items-center gap-3 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+   357→                <Avatar className="size-8">
+   358→                  {group.creator.avatarUrl && <AvatarImage src={group.creator.avatarUrl} />}
+   359→                  <AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   360→                    {group.creator.name.charAt(0)}
+   361→                  </AvatarFallback>
+   362→                </Avatar>
+   363→                <div className="flex-1">
+   364→                  <p className="text-sm font-medium">{group.creator.name}</p>
+   365→                  <p className="text-[10px] text-muted-foreground">Admin</p>
+   366→                </div>
+   367→                <Badge className="text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Admin</Badge>
+   368→              </div>
+   369→              {/* Mock members */}
+   370→              {['Amit Singh', 'Neha Gupta', 'Vikram Reddy', 'Sneha Joshi'].map((name, i) => (
+   371→                <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+   372→                  <Avatar className="size-8">
+   373→                    <AvatarFallback className="text-[10px] bg-muted text-muted-foreground">{name.charAt(0)}</AvatarFallback>
+   374→                  </Avatar>
+   375→                  <div className="flex-1">
+   376→                    <p className="text-sm font-medium">{name}</p>
+   377→                    <p className="text-[10px] text-muted-foreground">Member</p>
+   378→                  </div>
+   379→                </div>
+   380→              ))}
+   381→            </div>
+   382→          )}
+   383→
+   384→          {activeDetailTab === 'discussion' && (
+   385→            <div className="py-3 space-y-3">
+   386→              {/* Messages */}
+   387→              {mockMessages.map((msg) => (
+   388→                <div key={msg.id} className="flex gap-2">
+   389→                  <Avatar className="size-6 shrink-0 mt-0.5">
+   390→                    <AvatarFallback className="text-[8px] bg-muted text-muted-foreground">{msg.user.name.charAt(0)}</AvatarFallback>
+   391→                  </Avatar>
+   392→                  <div className="flex-1 min-w-0">
+   393→                    <div className="flex items-center gap-2">
+   394→                      <p className="text-xs font-medium">{msg.user.name}</p>
+   395→                      <span className="text-[10px] text-muted-foreground">{msg.time}</span>
+   396→                    </div>
+   397→                    <p className="text-xs text-muted-foreground mt-0.5">{msg.content}</p>
+   398→                  </div>
+   399→                </div>
+   400→              ))}
+   401→
+   402→              {/* Message input */}
+   403→              <div className="flex gap-2 pt-2 border-t">
+   404→                <Input
+   405→                  className="h-8 text-xs"
+   406→                  placeholder="Type a message..."
+   407→                  value={newMessage}
+   408→                  onChange={(e) => setNewMessage(e.target.value)}
+   409→                  onKeyDown={(e) => {
+   410→                    if (e.key === 'Enter' && newMessage.trim()) {
+   411→                      toast.success('Message sent (demo)');
+   412→                      setNewMessage('');
+   413→                    }
+   414→                  }}
+   415→                />
+   416→                <Button
+   417→                  size="icon"
+   418→                  className="size-8 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+   419→                  onClick={() => {
+   420→                    if (newMessage.trim()) {
+   421→                      toast.success('Message sent (demo)');
+   422→                      setNewMessage('');
+   423→                    }
+   424→                  }}
+   425→                >
+   426→                  <Send className="size-3.5" />
+   427→                </Button>
+   428→              </div>
+   429→            </div>
+   430→          )}
+   431→
+   432→          {activeDetailTab === 'resources' && (
+   433→            <div className="py-3 space-y-2">
+   434→              <div className="flex flex-col items-center justify-center py-8 text-center">
+   435→                <div className="rounded-xl bg-muted/60 p-3 mb-3">
+   436→                  <Share2 className="size-6 text-muted-foreground" />
+   437→                </div>
+   438→                <p className="text-sm font-medium">No shared resources yet</p>
+   439→                <p className="text-xs text-muted-foreground mt-0.5">Group members can share notes and study materials here.</p>
+   440→              </div>
+   441→            </div>
+   442→          )}
+   443→        </ScrollArea>
+   444→
+   445→        {/* Footer actions */}
+   446→        <DialogFooter className="border-t pt-3">
+   447→          <Button
+   448→            variant="outline"
+   449→            size="sm"
+   450→            onClick={() => onOpenChange(false)}
+   451→          >
+   452→            Close
+   453→          </Button>
+   454→          <Button
+   455→            size="sm"
+   456→            className={`gap-1.5 ${
+   457→              group.isMember
+   458→                ? 'bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive'
+   459→                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+   460→            }`}
+   461→            disabled={!group.isMember && isFull}
+   462→            onClick={() => {
+   463→              onJoinLeave(group.id, !!group.isMember);
+   464→              onOpenChange(false);
+   465→            }}
+   466→          >
+   467→            {group.isMember ? (
+   468→              <><LogOut className="size-3.5" /> Leave Group</>
+   469→            ) : (
+   470→              <><UserPlus className="size-3.5" /> Join Group</>
+   471→            )}
+   472→          </Button>
+   473→        </DialogFooter>
+   474→      </DialogContent>
+   475→    </Dialog>
+   476→  );
+   477→}
+   478→
+   479→// ── Main Study Groups Page ──────────────────────────────────────
+   480→export function StudyGroupsPage() {
+   481→  const queryClient = useQueryClient();
+   482→  const { user } = useAppStore();
+   483→  const [filter, setFilter] = useState<'all' | 'my'>('all');
+   484→  const [searchQuery, setSearchQuery] = useState('');
+   485→  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+   486→  const [detailGroup, setDetailGroup] = useState<StudyGroupData | null>(null);
+   487→  const [detailOpen, setDetailOpen] = useState(false);
+   488→
+   489→  // Create group form
+   490→  const [newGroup, setNewGroup] = useState({
+   491→    name: '',
+   492→    description: '',
+   493→    subjectId: '',
+   494→    isPublic: true,
+   495→    maxMembers: '20',
+   496→  });
+   497→
+   498→  // Fetch subjects for create form
+   499→  const { data: subjectsData } = useQuery({
+   500→    queryKey: ['subjects-study-groups'],
+   501→    queryFn: fetchSubjects,
+   502→  });
+   503→
+   504→  // Fetch study groups
+   505→  const queryParams = new URLSearchParams();
+   506→  if (searchQuery.trim()) queryParams.set('q', searchQuery.trim());
+   507→
+   508→  const { data, isLoading, isError } = useQuery({
+   509→    queryKey: ['study-groups', filter, searchQuery],
+   510→    queryFn: () => fetchStudyGroups(queryParams.toString()),
+   511→  });
+   512→
+   513→  const allGroups: (StudyGroupData & { actualMemberCount?: number })[] = data?.groups ?? [];
+   514→  const groups = filter === 'my'
+   515→    ? allGroups.filter((g) => g.isMember)
+   516→    : allGroups;
+   517→
+   518→  // Join/Leave mutation
+   519→  const joinLeaveMutation = useMutation({
+   520→    mutationFn: ({ groupId, action }: { groupId: string; action: 'join' | 'leave' }) =>
+   521→      joinLeaveGroup(groupId, action),
+   522→    onSuccess: (_, variables) => {
+   523→      queryClient.invalidateQueries({ queryKey: ['study-groups'] });
+   524→      toast.success(variables.action === 'join' ? 'Joined group!' : 'Left group');
+   525→    },
+   526→    onError: (error) => toast.error(error.message),
+   527→  });
+   528→
+   529→  // Create group mutation
+   530→  const createMutation = useMutation({
+   531→    mutationFn: createGroup,
+   532→    onSuccess: () => {
+   533→      queryClient.invalidateQueries({ queryKey: ['study-groups'] });
+   534→      setCreateDialogOpen(false);
+   535→      setNewGroup({ name: '', description: '', subjectId: '', isPublic: true, maxMembers: '20' });
+   536→      toast.success('Study group created!');
+   537→    },
+   538→    onError: (error) => toast.error(error.message),
+   539→  });
+   540→
+   541→  const handleJoinLeave = useCallback((groupId: string, isMember: boolean) => {
+   542→    joinLeaveMutation.mutate({ groupId, action: isMember ? 'leave' : 'join' });
+   543→  }, [joinLeaveMutation]);
+   544→
+   545→  const handleCreateGroup = () => {
+   546→    if (!newGroup.name.trim()) {
+   547→      toast.error('Group name is required');
+   548→      return;
+   549→    }
+   550→    createMutation.mutate({
+   551→      name: newGroup.name.trim(),
+   552→      description: newGroup.description.trim() || undefined,
+   553→      subjectId: newGroup.subjectId || undefined,
+   554→      isPublic: newGroup.isPublic,
+   555→      maxMembers: parseInt(newGroup.maxMembers) || 20,
+   556→    });
+   557→  };
+   558→
+   559→  const subjects = subjectsData?.subjects ?? [];
+   560→
+   561→  return (
+   562→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+   563→      {/* ── Header ─────────────────────────────────── */}
+   564→      <motion.div
+   565→        initial={{ opacity: 0, y: -10 }}
+   566→        animate={{ opacity: 1, y: 0 }}
+   567→        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+   568→      >
+   569→        <div>
+   570→          <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+   571→            <Users className="size-7 text-emerald-600" />
+   572→            Study Groups
+   573→          </h1>
+   574→          <p className="text-sm text-muted-foreground mt-0.5">
+   575→            Collaborate with peers and study together
+   576→          </p>
+   577→        </div>
+   578→        <Button
+   579→          className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm self-start"
+   580→          onClick={() => setCreateDialogOpen(true)}
+   581→        >
+   582→          <Plus className="size-4" /> Create Group
+   583→        </Button>
+   584→      </motion.div>
+   585→
+   586→      {/* ── Filters ────────────────────────────────── */}
+   587→      <motion.div
+   588→        initial={{ opacity: 0, y: 5 }}
+   589→        animate={{ opacity: 1, y: 0 }}
+   590→        transition={{ delay: 0.1 }}
+   591→        className="flex flex-col sm:flex-row gap-3"
+   592→      >
+   593→        <div className="flex gap-2">
+   594→          <Button
+   595→            variant={filter === 'all' ? 'default' : 'outline'}
+   596→            size="sm"
+   597→            className={`text-xs gap-1.5 ${filter === 'all' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
+   598→            onClick={() => setFilter('all')}
+   599→          >
+   600→            <Globe className="size-3.5" /> All Groups
+   601→          </Button>
+   602→          <Button
+   603→            variant={filter === 'my' ? 'default' : 'outline'}
+   604→            size="sm"
+   605→            className={`text-xs gap-1.5 ${filter === 'my' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
+   606→            onClick={() => setFilter('my')}
+   607→          >
+   608→            <Users className="size-3.5" /> My Groups
+   609→          </Button>
+   610→        </div>
+   611→        <div className="relative flex-1 max-w-sm">
+   612→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   613→          <Input
+   614→            className="pl-9 h-9"
+   615→            placeholder="Search groups..."
+   616→            value={searchQuery}
+   617→            onChange={(e) => setSearchQuery(e.target.value)}
+   618→          />
+   619→        </div>
+   620→      </motion.div>
+   621→
+   622→      {/* ── Groups Grid ────────────────────────────── */}
+   623→      {isLoading ? (
+   624→        <GroupGridSkeleton />
+   625→      ) : isError ? (
+   626→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   627→          <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+   628→            <Users className="size-8 text-destructive" />
+   629→          </div>
+   630→          <h3 className="font-semibold">Failed to load groups</h3>
+   631→          <p className="text-sm text-muted-foreground mt-1">Something went wrong. Please try again.</p>
+   632→          <Button variant="outline" size="sm" className="mt-4" onClick={() => queryClient.invalidateQueries({ queryKey: ['study-groups'] })}>
+   633→            Retry
+   634→          </Button>
+   635→        </motion.div>
+   636→      ) : groups.length === 0 ? (
+   637→        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-16 text-center">
+   638→          <div className="rounded-2xl bg-muted/60 p-4 mb-4">
+   639→            <Users className="size-8 text-muted-foreground" />
+   640→          </div>
+   641→          <h3 className="font-semibold">
+   642→            {filter === 'my' ? "You haven't joined any groups" : 'No study groups yet'}
+   643→          </h3>
+   644→          <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+   645→            {filter === 'my'
+   646→              ? 'Browse all groups and join one to start studying with peers.'
+   647→              : 'Be the first to create a study group and invite your classmates.'}
+   648→          </p>
+   649→          <Button
+   650→            size="sm"
+   651→            className="mt-4 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+   652→            onClick={() => filter === 'my' ? setFilter('all') : setCreateDialogOpen(true)}
+   653→          >
+   654→            {filter === 'my' ? (
+   655→              <><Globe className="size-4" /> Browse Groups</>
+   656→            ) : (
+   657→              <><Plus className="size-4" /> Create Group</>
+   658→            )}
+   659→          </Button>
+   660→        </motion.div>
+   661→      ) : (
+   662→        <motion.div
+   663→          variants={gridContainer}
+   664→          initial="hidden"
+   665→          animate="show"
+   666→          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+   667→        >
+   668→          <AnimatePresence mode="popLayout">
+   669→            {groups.map((group) => (
+   670→              <motion.div key={group.id} layout>
+   671→                <GroupCard
+   672→                  group={group}
+   673→                  onJoinLeave={handleJoinLeave}
+   674→                  onViewDetails={(g) => {
+   675→                    setDetailGroup(g);
+   676→                    setDetailOpen(true);
+   677→                  }}
+   678→                />
+   679→              </motion.div>
+   680→            ))}
+   681→          </AnimatePresence>
+   682→        </motion.div>
+   683→      )}
+   684→
+   685→      {/* ── Create Group Dialog ────────────────────── */}
+   686→      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+   687→        <DialogContent>
+   688→          <DialogHeader>
+   689→            <DialogTitle className="flex items-center gap-2">
+   690→              <Plus className="size-5 text-emerald-600" /> Create Study Group
+   691→            </DialogTitle>
+   692→            <DialogDescription>
+   693→              Start a new study group to collaborate with your peers
+   694→            </DialogDescription>
+   695→          </DialogHeader>
+   696→
+   697→          <div className="space-y-4 py-2">
+   698→            <div className="space-y-2">
+   699→              <Label htmlFor="group-name">Group Name *</Label>
+   700→              <Input
+   701→                id="group-name"
+   702→                value={newGroup.name}
+   703→                onChange={(e) => setNewGroup((p) => ({ ...p, name: e.target.value }))}
+   704→                placeholder="e.g., Data Structures Study Circle"
+   705→              />
+   706→            </div>
+   707→
+   708→            <div className="space-y-2">
+   709→              <Label htmlFor="group-desc">Description</Label>
+   710→              <Textarea
+   711→                id="group-desc"
+   712→                value={newGroup.description}
+   713→                onChange={(e) => setNewGroup((p) => ({ ...p, description: e.target.value }))}
+   714→                placeholder="What will your group study?"
+   715→                rows={3}
+   716→                className="resize-none"
+   717→              />
+   718→            </div>
+   719→
+   720→            <div className="grid grid-cols-2 gap-3">
+   721→              <div className="space-y-2">
+   722→                <Label>Subject</Label>
+   723→                <Select
+   724→                  value={newGroup.subjectId || 'none'}
+   725→                  onValueChange={(v) => setNewGroup((p) => ({ ...p, subjectId: v === 'none' ? '' : v }))}
+   726→                >
+   727→                  <SelectTrigger>
+   728→                    <SelectValue placeholder="Select subject" />
+   729→                  </SelectTrigger>
+   730→                  <SelectContent>
+   731→                    <SelectItem value="none">No subject</SelectItem>
+   732→                    {subjects.map((s: { id: string; name: string }) => (
+   733→                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+   734→                    ))}
+   735→                  </SelectContent>
+   736→                </Select>
+   737→              </div>
+   738→
+   739→              <div className="space-y-2">
+   740→                <Label htmlFor="max-members">Max Members</Label>
+   741→                <Input
+   742→                  id="max-members"
+   743→                  type="number"
+   744→                  min={2}
+   745→                  max={200}
+   746→                  value={newGroup.maxMembers}
+   747→                  onChange={(e) => setNewGroup((p) => ({ ...p, maxMembers: e.target.value }))}
+   748→                />
+   749→              </div>
+   750→            </div>
+   751→
+   752→            <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/50">
+   753→              <div className="space-y-0.5">
+   754→                <p className="text-sm font-medium">Public Group</p>
+   755→                <p className="text-xs text-muted-foreground">
+   756→                  {newGroup.isPublic ? 'Anyone can find and join this group' : 'Only invited members can join'}
+   757→                </p>
+   758→              </div>
+   759→              <Switch
+   760→                checked={newGroup.isPublic}
+   761→                onCheckedChange={(checked) => setNewGroup((p) => ({ ...p, isPublic: checked }))}
+   762→              />
+   763→            </div>
+   764→          </div>
+   765→
+   766→          <DialogFooter>
+   767→            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+   768→            <Button
+   769→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+   770→              disabled={!newGroup.name.trim() || createMutation.isPending}
+   771→              onClick={handleCreateGroup}
+   772→            >
+   773→              {createMutation.isPending ? 'Creating...' : 'Create Group'}
+   774→            </Button>
+   775→          </DialogFooter>
+   776→        </DialogContent>
+   777→      </Dialog>
+   778→
+   779→      {/* ── Group Detail Dialog ────────────────────── */}
+   780→      <GroupDetailDialog
+   781→        group={detailGroup}
+   782→        open={detailOpen}
+   783→        onOpenChange={setDetailOpen}
+   784→        onJoinLeave={handleJoinLeave}
+   785→      />
+   786→    </div>
+   787→  );
+   788→}
+   789→

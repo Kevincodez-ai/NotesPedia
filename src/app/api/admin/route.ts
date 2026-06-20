@@ -80,6 +80,35 @@ const featureNoteSchema = z.object({
   id: z.string().min(1),
 });
 
+const listUsersSchema = z.object({
+  action: z.literal('listUsers'),
+  page: z.number().int().min(1).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  q: z.string().optional(),
+  role: z.string().optional(),
+});
+
+const listNotesSchema = z.object({
+  action: z.literal('listNotes'),
+  page: z.number().int().min(1).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  status: z.string().optional(),
+});
+
+const listReportsSchema = z.object({
+  action: z.literal('listReports'),
+  page: z.number().int().min(1).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  status: z.string().optional(),
+});
+
+const listCollegesSchema = z.object({
+  action: z.literal('listColleges'),
+  page: z.number().int().min(1).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  q: z.string().optional(),
+});
+
 const adminActionSchema = z.discriminatedUnion('action', [
   updateCollegeSchema,
   deleteCollegeSchema,
@@ -89,6 +118,10 @@ const adminActionSchema = z.discriminatedUnion('action', [
   resolveReportSchema,
   removeNoteSchema,
   featureNoteSchema,
+  listUsersSchema,
+  listNotesSchema,
+  listReportsSchema,
+  listCollegesSchema,
 ]);
 
 // GET - Admin dashboard stats
@@ -458,6 +491,129 @@ export async function POST(request: NextRequest) {
 
         await logAdminAction(user.id, data.id, 'note', 'featureNote', `Featured note: ${note.title}`);
         return NextResponse.json({ success: true, message: 'Note featured' });
+      }
+
+      case 'listUsers': {
+        const page = data.page ?? 1;
+        const limit = data.limit ?? 10;
+        const where: Record<string, unknown> = {};
+        if (data.role) where.role = data.role;
+        if (data.q) {
+          where.OR = [
+            { name: { contains: data.q } },
+            { email: { contains: data.q } },
+          ];
+        }
+
+        const [users, total] = await Promise.all([
+          db.user.findMany({
+            where,
+            select: {
+              id: true, name: true, email: true, role: true, avatarUrl: true,
+              isActive: true, emailVerified: true, createdAt: true,
+              _count: { select: { notes: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+          }),
+          db.user.count({ where }),
+        ]);
+
+        return NextResponse.json({ success: true, users, total, page, totalPages: Math.ceil(total / limit) });
+      }
+
+      case 'listNotes': {
+        const page = data.page ?? 1;
+        const limit = data.limit ?? 10;
+        const where: Record<string, unknown> = {};
+        if (data.status) where.status = data.status;
+
+        const [notes, total] = await Promise.all([
+          db.note.findMany({
+            where,
+            select: {
+              id: true, title: true, fileType: true, status: true,
+              downloadCount: true, viewCount: true, avgRating: true,
+              createdAt: true,
+              uploader: { select: { id: true, name: true, avatarUrl: true } },
+              subject: { select: { name: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+          }),
+          db.note.count({ where }),
+        ]);
+
+        return NextResponse.json({ success: true, notes, total, page, totalPages: Math.ceil(total / limit) });
+      }
+
+      case 'listReports': {
+        const page = data.page ?? 1;
+        const limit = data.limit ?? 10;
+        const where: Record<string, unknown> = {};
+        if (data.status) where.status = data.status;
+
+        const [reports, total] = await Promise.all([
+          db.report.findMany({
+            where,
+            include: {
+              reporter: { select: { id: true, name: true, avatarUrl: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+          }),
+          db.report.count({ where }),
+        ]);
+
+        return NextResponse.json({
+          success: true,
+          reports: reports.map((r) => ({
+            id: r.id, targetType: r.targetType, targetId: r.targetId,
+            reason: r.reason, description: r.description, status: r.status,
+            createdAt: r.createdAt.toISOString(),
+            reporter: r.reporter,
+          })),
+          total, page, totalPages: Math.ceil(total / limit),
+        });
+      }
+
+      case 'listColleges': {
+        const page = data.page ?? 1;
+        const limit = data.limit ?? 10;
+        const where: Record<string, unknown> = {};
+        if (data.q) {
+          where.OR = [
+            { name: { contains: data.q } },
+            { shortName: { contains: data.q } },
+          ];
+        }
+
+        const [colleges, total] = await Promise.all([
+          db.college.findMany({
+            where,
+            include: {
+              _count: { select: { notes: true, profiles: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+          }),
+          db.college.count({ where }),
+        ]);
+
+        return NextResponse.json({
+          success: true,
+          colleges: colleges.map((c) => ({
+            id: c.id, name: c.name, shortName: c.shortName,
+            city: c.city, state: c.state, country: c.country,
+            type: c.type, website: c.website, isVerified: c.isVerified,
+            noteCount: c._count.notes, memberCount: c._count.profiles,
+          })),
+          total, page, totalPages: Math.ceil(total / limit),
+        });
       }
 
       default:

@@ -77,28 +77,33 @@ const features = [
 ];
 
 const defaultStats = [
-  { value: '...', label: 'Students', icon: Users },
-  { value: '...', label: 'Notes', icon: FileText },
-  { value: '...', label: 'Colleges', icon: Building2 },
-  { value: '...', label: 'Subjects', icon: BookMarked },
+  { value: '0', label: 'Students', icon: Users },
+  { value: '0', label: 'Notes', icon: FileText },
+  { value: '0', label: 'Colleges', icon: Building2 },
+  { value: '0', label: 'Subjects', icon: BookMarked },
 ];
-
-const footerLinks = {
-  Product: ['Features', 'Pricing', 'API', 'Integrations'],
-  Company: ['About', 'Blog', 'Careers', 'Contact'],
-  Resources: ['Documentation', 'Help Center', 'Community', 'Status'],
-  Legal: ['Privacy', 'Terms', 'Cookie Policy', 'Licenses'],
-};
 
 export function LandingPage() {
   const { isAuthenticated, navigate } = useAppStore();
+
+  // Build footer links with real navigation actions
+  const footerLinks: Record<string, { label: string; action: () => void }[]> = {
+    Product: [
+      { label: 'Features', action: () => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' }) },
+      { label: 'Explore Notes', action: () => navigate('search') },
+    ],
+    Resources: [
+      { label: 'Search', action: () => navigate('search') },
+      { label: 'Leaderboard', action: () => navigate('leaderboard') },
+    ],
+  };
 
   // Fetch dynamic stats
   const [stats, setStats] = React.useState(defaultStats);
   React.useEffect(() => {
     async function loadStats() {
       try {
-        const res = await fetch('/api/admin');
+        const res = await fetch('/api/stats');
         const data = await res.json();
         if (data.success && data.stats) {
           setStats([
@@ -138,9 +143,6 @@ export function LandingPage() {
           <nav className="hidden items-center gap-6 md:flex">
             <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Features
-            </button>
-            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Pricing
             </button>
             <button onClick={() => navigate('search')} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Explore
@@ -336,7 +338,7 @@ export function LandingPage() {
       {/* Footer */}
       <footer className="border-t bg-muted/30 py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {/* Brand */}
             <div className="lg:col-span-1">
               <div className="flex items-center gap-2">
@@ -356,10 +358,13 @@ export function LandingPage() {
                 <h4 className="mb-3 text-sm font-semibold">{category}</h4>
                 <ul className="space-y-2">
                   {links.map((link) => (
-                    <li key={link}>
-                      <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
-                        {link}
-                      </span>
+                    <li key={link.label}>
+                      <button
+                        onClick={link.action}
+                        className="text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                      >
+                        {link.label}
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -373,17 +378,9 @@ export function LandingPage() {
             <p className="text-sm text-muted-foreground">
               &copy; {new Date().getFullYear()} NotesPedia. All rights reserved.
             </p>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
-                Privacy
-              </span>
-              <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
-                Terms
-              </span>
-              <span className="text-sm text-muted-foreground transition-colors hover:text-foreground">
-                Cookies
-              </span>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Built for students, by students.
+            </p>
           </div>
         </div>
       </footer>

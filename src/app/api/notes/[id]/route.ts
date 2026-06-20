@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const updateNoteSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).optional(),
+  subjectId: z.string().optional(),
+  collegeId: z.string().optional(),
+  departmentId: z.string().optional(),
+  semester: z.number().int().min(1).max(12).optional(),
+  tags: z.array(z.string().max(50)).max(10).optional(),
+  isPublic: z.boolean().optional(),
+});
 
 // PUT - Update a note
 export async function PUT(
@@ -15,7 +27,8 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, subjectId, collegeId, departmentId, semester, tags, isPublic } = body;
+    const data = updateNoteSchema.parse(body);
+    const { title, description, subjectId, collegeId, departmentId, semester, tags, isPublic } = data;
 
     // Fetch existing note
     const existingNote = await db.note.findUnique({ where: { id } });
@@ -90,6 +103,11 @@ export async function PUT(
       },
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      const firstIssue = error.issues?.[0];
+      const message = firstIssue?.message || 'Validation error';
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error('Note update error:', error);
     return NextResponse.json({ success: false, error: 'Failed to update note' }, { status: 500 });
   }
@@ -181,6 +199,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
     }
 
+    // Block access to removed/flagged notes unless user is admin/moderator
+    if ((note.status === 'removed' || note.status === 'flagged') && !['admin', 'super_admin', 'moderator'].includes(user?.role || '')) {
+      return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
+    }
+
     await db.note.update({
       where: { id },
       data: { viewCount: { increment: 1 } },
@@ -190,12 +213,11 @@ export async function GET(
       id: note.id,
       title: note.title,
       description: note.description,
-      filePath: note.filePath,
       fileType: note.fileType,
       fileSize: note.fileSize,
       thumbnailUrl: note.thumbnailUrl,
       previewText: note.previewText,
-      extractedText: note.extractedText,
+      extractedText: (note.uploaderId === user?.id || ['admin', 'super_admin', 'moderator'].includes(user?.role || '')) ? note.extractedText : null,
       subject: note.subject,
       college: note.college,
       department: note.department,

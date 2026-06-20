@@ -5,6 +5,14 @@ import { hashPassword, getAuthUser, hasRole } from '@/lib/auth';
 // POST - Seed database with sample data
 export async function POST(request: NextRequest) {
   try {
+    // Production guard — disable seeding when ALLOW_SEED is explicitly 'false'
+    if (process.env.ALLOW_SEED === 'false') {
+      return NextResponse.json(
+        { success: false, error: 'Seeding is disabled in this environment.' },
+        { status: 403 },
+      );
+    }
+
     // Authentication and admin role check
     const user = await getAuthUser();
     if (!user) {
@@ -444,7 +452,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ============================================================
-    // 6. ADDITIONAL DATA - Tags, Achievements, Study Groups
+    // 6. ADDITIONAL DATA - Tags, Achievements
     // ============================================================
 
     // Add tags to notes
@@ -513,60 +521,6 @@ export async function POST(request: NextRequest) {
       db.userAchievement.create({ data: { userId: users[3].id, achievementId: achievements[3].id } }),
       db.userAchievement.create({ data: { userId: users[1].id, achievementId: achievements[0].id } }),
       db.userAchievement.create({ data: { userId: users[1].id, achievementId: achievements[4].id } }),
-    ]);
-
-    // Create study groups
-    await Promise.all([
-      db.studyGroup.create({
-        data: {
-          name: 'DSA Preparation Group',
-          description: 'Weekly problem-solving sessions for Data Structures & Algorithms',
-          subjectId: subjects[0].id,
-          collegeId: colleges[0].id,
-          creatorId: users[0].id,
-          isPublic: true,
-          memberCount: 3,
-          members: {
-            create: [
-              { userId: users[0].id, role: 'admin' },
-              { userId: users[3].id, role: 'member' },
-            ],
-          },
-        },
-      }),
-      db.studyGroup.create({
-        data: {
-          name: 'Medical Board Prep',
-          description: 'Collaborative study group for medical board exam preparation',
-          subjectId: subjects[6].id,
-          collegeId: colleges[1].id,
-          creatorId: users[1].id,
-          isPublic: true,
-          memberCount: 2,
-          members: {
-            create: [
-              { userId: users[1].id, role: 'admin' },
-            ],
-          },
-        },
-      }),
-      db.studyGroup.create({
-        data: {
-          name: 'ML/AI Research Circle',
-          description: 'Deep learning and AI research discussion group',
-          subjectId: subjects[2].id,
-          collegeId: colleges[3].id,
-          creatorId: users[3].id,
-          isPublic: true,
-          memberCount: 3,
-          members: {
-            create: [
-              { userId: users[3].id, role: 'admin' },
-              { userId: users[0].id, role: 'member' },
-            ],
-          },
-        },
-      }),
     ]);
 
     // Create some bookmarks

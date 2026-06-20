@@ -216,21 +216,6 @@ export interface AchievementData {
   unlockedAt: string;
 }
 
-// Study Group Types (kept for Prisma schema compatibility)
-export interface StudyGroupData {
-  id: string;
-  name: string;
-  description?: string;
-  subject?: { id: string; name: string };
-  college?: { id: string; name: string };
-  creator: { id: string; name: string; avatarUrl?: string };
-  isPublic: boolean;
-  memberCount: number;
-  maxMembers: number;
-  isMember?: boolean;
-  createdAt: string;
-}
-
 // Admin Types
 export interface AdminStats {
   totalUsers: number;
@@ -238,7 +223,7 @@ export interface AdminStats {
   totalDownloads: number;
   totalColleges: number;
   pendingReports: number;
-  activeUsersToday: number;
+  newUsersToday: number;
   newNotesToday: number;
 }
 

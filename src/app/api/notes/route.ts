@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const createNoteSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(200, 'Title must be at most 200 characters'),
+  description: z.string().max(2000, 'Description must be at most 2000 characters').optional(),
+  subjectId: z.string().optional(),
+  collegeId: z.string().optional(),
+  departmentId: z.string().optional(),
+  semester: z.number().int().min(1).max(12).optional(),
+  tags: z.array(z.string().max(50, 'Tag too long')).max(10, 'Maximum 10 tags').optional(),
+  filePath: z.string().max(500).optional(),
+  fileType: z.string().max(20).optional(),
+  fileSize: z.number().int().positive().optional(),
+  extractedText: z.string().max(100000).optional(),
+  previewText: z.string().max(2000).optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +36,13 @@ export async function GET(request: NextRequest) {
     const fileType = searchParams.get('fileType');
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const uploaderId = searchParams.get('uploaderId');
-    const status = searchParams.get('status') || 'active';
+    const requestedStatus = searchParams.get('status');
+
+    // Only admins can view non-active notes
+    const allowedStatuses = ['admin', 'super_admin', 'moderator'].includes(user.role)
+      ? ['active', 'processing', 'flagged', 'removed']
+      : ['active'];
+    const status = (requestedStatus && allowedStatuses.includes(requestedStatus)) ? requestedStatus : 'active';
 
     const where: Record<string, unknown> = { status };
     if (subjectId) where.subjectId = subjectId;
@@ -105,11 +127,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, subjectId, collegeId, departmentId, semester, tags, filePath, fileType, fileSize, extractedText, previewText } = body;
+    const data = createNoteSchema.parse(body);
 
-    if (!title?.trim()) {
-      return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
-    }
+    const { title, description, subjectId, collegeId, departmentId, semester, tags, filePath, fileType, fileSize, extractedText, previewText } = data;
 
     const note = await db.note.create({
       data: {
@@ -161,6 +181,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, note }, { status: 201 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      const firstIssue = error.issues?.[0];
+      const message = firstIssue?.message || 'Validation error';
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error('Note creation error:', error);
     return NextResponse.json({ success: false, error: 'Failed to create note' }, { status: 500 });
   }

@@ -275,8 +275,19 @@ export function SearchPage() {
     setPage(1);
   }, [setSearchQuery]);
 
-  // Trending tags
-  const trendingTags = ['Data Structures', 'Machine Learning', 'Calculus', 'Thermodynamics', 'Organic Chemistry', 'Microeconomics', 'Discrete Math', 'Operating Systems'];
+  // Fetch trending subjects (most popular by note count)
+  const { data: trendingData } = useQuery({
+    queryKey: ['trending-subjects'],
+    queryFn: async () => {
+      const res = await fetch('/api/subjects?limit=8');
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+  });
+  const trendingTags: string[] = (trendingData?.subjects ?? [])
+    .filter((s: { actualNoteCount?: number; noteCount?: number }) => (s.actualNoteCount ?? s.noteCount ?? 0) > 0)
+    .map((s: { name: string }) => s.name)
+    .slice(0, 8);
 
   // Fetch colleges & subjects for filters
   const { data: collegesData } = useQuery({

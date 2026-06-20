@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const rateNoteSchema = z.object({
+  noteId: z.string().min(1),
+  value: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating must be at most 5'),
+});
 
 // POST - Rate a note (1-5), upsert
 export async function POST(request: NextRequest) {
@@ -11,16 +17,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { noteId, value } = body;
-
-    if (!noteId || !value) {
-      return NextResponse.json({ success: false, error: 'noteId and value are required' }, { status: 400 });
-    }
-
-    const ratingValue = parseInt(value);
-    if (isNaN(ratingValue) || ratingValue < 1 || ratingValue > 5) {
-      return NextResponse.json({ success: false, error: 'Rating must be between 1 and 5' }, { status: 400 });
-    }
+    const data = rateNoteSchema.parse(body);
+    const { noteId, value: ratingValue } = data;
 
     // Check if note exists
     const note = await db.note.findUnique({ where: { id: noteId } });
@@ -101,6 +99,11 @@ export async function POST(request: NextRequest) {
       ratingCount: ratingStats._count.value,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      const firstIssue = error.issues?.[0];
+      const message = firstIssue?.message || 'Validation error';
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error('Rating error:', error);
     return NextResponse.json({ success: false, error: 'Failed to rate note' }, { status: 500 });
   }
@@ -138,7 +141,7 @@ export async function GET(request: NextRequest) {
 
     // Check if current user has rated
     const user = await getAuthUser();
-    let userRating = null;
+    let userRating: number | null = null;
     if (user) {
       const existingRating = await db.rating.findUnique({
         where: { noteId_userId: { noteId, userId: user.id } },

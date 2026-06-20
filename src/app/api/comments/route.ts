@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const editCommentSchema = z.object({
+  commentId: z.string().min(1),
+  content: z.string().min(1, 'Content is required').max(2000, 'Comment must be at most 2000 characters'),
+});
+
+const createCommentSchema = z.object({
+  noteId: z.string().min(1),
+  content: z.string().min(1, 'Content is required').max(2000, 'Comment must be at most 2000 characters'),
+  parentId: z.string().optional(),
+});
 
 // PUT - Edit a comment
 export async function PUT(request: NextRequest) {
@@ -11,11 +23,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { commentId, content } = body;
-
-    if (!commentId || !content?.trim()) {
-      return NextResponse.json({ success: false, error: 'commentId and content are required' }, { status: 400 });
-    }
+    const data = editCommentSchema.parse(body);
+    const { commentId, content } = data;
 
     const comment = await db.comment.findUnique({ where: { id: commentId } });
     if (!comment) {
@@ -55,6 +64,11 @@ export async function PUT(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      const firstIssue = error.issues?.[0];
+      const message = firstIssue?.message || 'Validation error';
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error('Comment update error:', error);
     return NextResponse.json({ success: false, error: 'Failed to update comment' }, { status: 500 });
   }
@@ -188,11 +202,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { noteId, content, parentId } = body;
-
-    if (!noteId || !content?.trim()) {
-      return NextResponse.json({ success: false, error: 'noteId and content are required' }, { status: 400 });
-    }
+    const data = createCommentSchema.parse(body);
+    const { noteId, content, parentId } = data;
 
     // Check if note exists
     const note = await db.note.findUnique({ where: { id: noteId } });
@@ -287,6 +298,11 @@ export async function POST(request: NextRequest) {
       },
     }, { status: 201 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      const firstIssue = error.issues?.[0];
+      const message = firstIssue?.message || 'Validation error';
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     console.error('Comment creation error:', error);
     return NextResponse.json({ success: false, error: 'Failed to add comment' }, { status: 500 });
   }

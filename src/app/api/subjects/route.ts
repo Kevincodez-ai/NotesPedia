@@ -62,12 +62,16 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create subject
+// POST - Create subject (admin/moderator only)
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!['admin', 'super_admin', 'moderator'].includes(user.role)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions. Only admins can create subjects.' }, { status: 403 });
     }
 
     const body = await request.json();

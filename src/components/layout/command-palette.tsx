@@ -53,7 +53,7 @@ const quickActions = [
   { title: 'Go to profile', page: 'profile' as PageName, icon: FileText, keywords: ['me', 'account'] },
 ];
 
-const recentSearches = ['Data Structures notes', 'Machine Learning PDF', 'Operating Systems'];
+const recentSearches: string[] = [];
 
 export function CommandPalette() {
   const { commandPaletteOpen, setCommandPaletteOpen, navigate, user } = useAppStore();

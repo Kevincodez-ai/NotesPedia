@@ -55,11 +55,13 @@ const deleteSubjectSchema = z.object({
   id: z.string().min(1),
 });
 
+const VALID_ROLES = ['student', 'verified_student', 'contributor', 'moderator', 'admin', 'super_admin'] as const;
+
 const updateUserSchema = z.object({
   action: z.literal('updateUser'),
   id: z.string().min(1),
   name: z.string().optional(),
-  role: z.string().optional(),
+  role: z.enum(VALID_ROLES).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -421,6 +423,11 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: false, error: 'Only super admins can assign admin roles' }, { status: 403 });
         }
 
+        // Prevent admins from modifying their own role
+        if (data.role !== undefined && data.id === user.id && user.role !== 'super_admin') {
+          return NextResponse.json({ success: false, error: 'Cannot modify your own role' }, { status: 403 });
+        }
+
         const updateData: Record<string, unknown> = {};
         if (data.name !== undefined) updateData.name = data.name.trim();
         if (data.role !== undefined) updateData.role = data.role;
@@ -501,18 +508,22 @@ export async function POST(request: NextRequest) {
         if (data.q) {
           where.OR = [
             { name: { contains: data.q } },
-            { email: { contains: data.q } },
+            ...(user.role === 'super_admin' ? [{ email: { contains: data.q } }] : []),
           ];
         }
+
+        // Only super_admin can see email addresses
+        const userSelect = {
+          id: true, name: true, role: true, avatarUrl: true,
+          isActive: true, emailVerified: true, createdAt: true,
+          ...(user.role === 'super_admin' ? { email: true } : {}),
+          _count: { select: { notes: true } },
+        };
 
         const [users, total] = await Promise.all([
           db.user.findMany({
             where,
-            select: {
-              id: true, name: true, email: true, role: true, avatarUrl: true,
-              isActive: true, emailVerified: true, createdAt: true,
-              _count: { select: { notes: true } },
-            },
+            select: userSelect,
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
             take: limit,

@@ -47,13 +47,26 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get file extension
+    // Get file extension and enforce it matches the allowed MIME type
     const originalName = file.name;
-    const ext = path.extname(originalName).toLowerCase().slice(1) || allowedExtensions[0];
+    const providedExt = path.extname(originalName).toLowerCase().slice(1);
 
-    // Verify extension matches type
-    if (!allowedExtensions.includes(ext) && !allowedExtensions.includes(ext.replace('jpg', 'jpeg'))) {
-      // Use the extension from allowed types for this MIME type
+    // Extension MUST match the declared MIME type — prevent stored XSS via extension mismatch
+    let ext: string;
+    if (providedExt && (allowedExtensions.includes(providedExt) || allowedExtensions.includes(providedExt.replace('jpg', 'jpeg')))) {
+      ext = providedExt;
+    } else {
+      // Fall back to the first allowed extension for this MIME type
+      ext = allowedExtensions[0];
+    }
+
+    // Block dangerous extensions regardless of MIME type claim
+    const DANGEROUS_EXTENSIONS = ['html', 'htm', 'svg', 'js', 'mjs', 'xml', 'xhtml', 'shtml', 'php', 'asp', 'aspx', 'jsp', 'exe', 'bat', 'cmd', 'sh', 'py', 'rb', 'pl', 'cgi'];
+    if (DANGEROUS_EXTENSIONS.includes(ext)) {
+      return NextResponse.json({
+        success: false,
+        error: `File extension ".${ext}" is not allowed for security reasons`,
+      }, { status: 400 });
     }
 
     // Generate unique filename

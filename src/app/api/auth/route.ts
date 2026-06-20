@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const firstIssue = error.issues?.[0] || error.errors?.[0];
+      const firstIssue = error.issues?.[0];
       const message = firstIssue?.message || 'Validation error';
       return NextResponse.json({ success: false, error: message }, { status: 400 });
     }
@@ -226,7 +226,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true, user: updatedUser });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const firstIssue = error.issues?.[0] || error.errors?.[0];
+      const firstIssue = error.issues?.[0];
       const message = firstIssue?.message || 'Validation error';
       return NextResponse.json({ success: false, error: message }, { status: 400 });
     }

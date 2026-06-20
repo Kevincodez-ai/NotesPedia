@@ -1,0 +1,749 @@
+     1→/**
+     2→ * API Route E2E Tests
+     3→ * Covers: all API endpoints, auth, CRUD operations, error handling, security
+     4→ */
+     5→import { test, expect } from '@playwright/test';
+     6→
+     7→let studentToken: string;
+     8→let adminToken: string;
+     9→let studentId: string;
+    10→let adminId: string;
+    11→let testNoteId: string;
+    12→
+    13→test.describe('API Tests', () => {
+    14→  test.describe('Auth API', () => {
+    15→    test('POST /api/auth - signup', async ({ request }) => {
+    16→      const res = await request.post('/api/auth', {
+    17→        data: {
+    18→          action: 'signup',
+    19→          name: 'API Test User',
+    20→          email: `api-test-${Date.now()}@test.com`,
+    21→          password: 'testpass123',
+    22→        },
+    23→      });
+    24→      const data = await res.json();
+    25→      expect(data.success).toBe(true);
+    26→      expect(data.user).toBeDefined();
+    27→      expect(data.user.name).toBe('API Test User');
+    28→      expect(data.user.role).toBe('student');
+    29→      expect(data.token).toBeDefined();
+    30→    });
+    31→
+    32→    test('POST /api/auth - login with valid credentials', async ({ request }) => {
+    33→      const res = await request.post('/api/auth', {
+    34→        data: {
+    35→          action: 'login',
+    36→          email: 'arjun@iitb.ac.in',
+    37→          password: 'password123',
+    38→        },
+    39→      });
+    40→      const data = await res.json();
+    41→      expect(data.success).toBe(true);
+    42→      expect(data.user.email).toBe('arjun@iitb.ac.in');
+    43→      studentToken = data.token;
+    44→      studentId = data.user.id;
+    45→    });
+    46→
+    47→    test('POST /api/auth - login with invalid credentials', async ({ request }) => {
+    48→      const res = await request.post('/api/auth', {
+    49→        data: {
+    50→          action: 'login',
+    51→          email: 'arjun@iitb.ac.in',
+    52→          password: 'wrongpassword',
+    53→        },
+    54→      });
+    55→      const data = await res.json();
+    56→      expect(data.success).toBe(false);
+    57→      expect(data.error).toContain('Invalid');
+    58→    });
+    59→
+    60→    test('POST /api/auth - signup with duplicate email', async ({ request }) => {
+    61→      const res = await request.post('/api/auth', {
+    62→        data: {
+    63→          action: 'signup',
+    64→          name: 'Duplicate',
+    65→          email: 'arjun@iitb.ac.in',
+    66→          password: 'test123',
+    67→        },
+    68→      });
+    69→      const data = await res.json();
+    70→      expect(data.success).toBe(false);
+    71→    });
+    72→
+    73→    test('POST /api/auth - signup with short password', async ({ request }) => {
+    74→      const res = await request.post('/api/auth', {
+    75→        data: {
+    76→          action: 'signup',
+    77→          name: 'Short PW',
+    78→          email: 'short@test.com',
+    79→          password: '12',
+    80→        },
+    81→      });
+    82→      const data = await res.json();
+    83→      expect(data.success).toBe(false);
+    84→      expect(res.status()).toBe(400);
+    85→    });
+    86→
+    87→    test('GET /api/auth - get current user', async ({ request }) => {
+    88→      // First login
+    89→      const loginRes = await request.post('/api/auth', {
+    90→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+    91→      });
+    92→      const loginData = await loginRes.json();
+    93→      const token = loginData.token;
+    94→
+    95→      const res = await request.get('/api/auth', {
+    96→        headers: { Cookie: `notespedia_token=${token}` },
+    97→      });
+    98→      const data = await res.json();
+    99→      expect(data.success).toBe(true);
+   100→      expect(data.user.email).toBe('arjun@iitb.ac.in');
+   101→    });
+   102→
+   103→    test('PUT /api/auth - update profile', async ({ request }) => {
+   104→      const loginRes = await request.post('/api/auth', {
+   105→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   106→      });
+   107→      const { token } = await loginRes.json();
+   108→
+   109→      const res = await request.put('/api/auth', {
+   110→        headers: { Cookie: `notespedia_token=${token}` },
+   111→        data: { name: 'Arjun Updated', bio: 'Updated bio from API test' },
+   112→      });
+   113→      const data = await res.json();
+   114→      expect(data.success).toBe(true);
+   115→      expect(data.user.name).toBe('Arjun Updated');
+   116→
+   117→      // Revert
+   118→      await request.put('/api/auth', {
+   119→        headers: { Cookie: `notespedia_token=${token}` },
+   120→        data: { name: 'Arjun Sharma' },
+   121→      });
+   122→    });
+   123→
+   124→    test('PUT /api/auth - unauthenticated should fail', async ({ request }) => {
+   125→      const res = await request.put('/api/auth', {
+   126→        data: { name: 'Hacker' },
+   127→      });
+   128→      expect(res.status()).toBe(401);
+   129→    });
+   130→  });
+   131→
+   132→  test.describe('Notes API', () => {
+   133→    test('GET /api/notes - list notes', async ({ request }) => {
+   134→      const loginRes = await request.post('/api/auth', {
+   135→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   136→      });
+   137→      const { token } = await loginRes.json();
+   138→
+   139→      const res = await request.get('/api/notes?limit=5', {
+   140→        headers: { Cookie: `notespedia_token=${token}` },
+   141→      });
+   142→      const data = await res.json();
+   143→      expect(data.success).toBe(true);
+   144→      expect(data.notes).toBeDefined();
+   145→      expect(data.notes.length).toBeGreaterThan(0);
+   146→      expect(data.total).toBeGreaterThan(0);
+   147→    });
+   148→
+   149→    test('GET /api/notes - unauthenticated should fail', async ({ request }) => {
+   150→      const res = await request.get('/api/notes');
+   151→      expect(res.status()).toBe(401);
+   152→    });
+   153→
+   154→    test('GET /api/notes - filter by subject', async ({ request }) => {
+   155→      const loginRes = await request.post('/api/auth', {
+   156→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   157→      });
+   158→      const { token } = await loginRes.json();
+   159→
+   160→      // Get subjects first
+   161→      const subjectsRes = await request.get('/api/subjects?limit=1', {
+   162→        headers: { Cookie: `notespedia_token=${token}` },
+   163→      });
+   164→      const subjectsData = await subjectsRes.json();
+   165→      if (subjectsData.subjects?.length > 0) {
+   166→        const subjectId = subjectsData.subjects[0].id;
+   167→        const res = await request.get(`/api/notes?subjectId=${subjectId}&limit=5`, {
+   168→          headers: { Cookie: `notespedia_token=${token}` },
+   169→        });
+   170→        const data = await res.json();
+   171→        expect(data.success).toBe(true);
+   172→      }
+   173→    });
+   174→
+   175→    test('GET /api/notes - sort by downloads', async ({ request }) => {
+   176→      const loginRes = await request.post('/api/auth', {
+   177→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   178→      });
+   179→      const { token } = await loginRes.json();
+   180→
+   181→      const res = await request.get('/api/notes?sortBy=downloads&limit=5', {
+   182→        headers: { Cookie: `notespedia_token=${token}` },
+   183→      });
+   184→      const data = await res.json();
+   185→      expect(data.success).toBe(true);
+   186→      if (data.notes.length > 1) {
+   187→        expect(data.notes[0].downloadCount).toBeGreaterThanOrEqual(data.notes[1].downloadCount);
+   188→      }
+   189→    });
+   190→
+   191→    test('POST /api/notes - create note', async ({ request }) => {
+   192→      const loginRes = await request.post('/api/auth', {
+   193→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   194→      });
+   195→      const { token } = await loginRes.json();
+   196→
+   197→      const res = await request.post('/api/notes', {
+   198→        headers: { Cookie: `notespedia_token=${token}` },
+   199→        data: {
+   200→          title: 'API Test Note',
+   201→          description: 'Created by automated API test',
+   202→          fileType: 'txt',
+   203→          semester: 5,
+   204→          tags: ['test', 'api', 'automated'],
+   205→        },
+   206→      });
+   207→      const data = await res.json();
+   208→      expect(data.success).toBe(true);
+   209→      expect(data.note.title).toBe('API Test Note');
+   210→      testNoteId = data.note.id;
+   211→    });
+   212→
+   213→    test('GET /api/notes/[id] - get note detail', async ({ request }) => {
+   214→      const loginRes = await request.post('/api/auth', {
+   215→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   216→      });
+   217→      const { token } = await loginRes.json();
+   218→
+   219→      // Get any note ID
+   220→      const listRes = await request.get('/api/notes?limit=1', {
+   221→        headers: { Cookie: `notespedia_token=${token}` },
+   222→      });
+   223→      const listData = await listRes.json();
+   224→      const noteId = listData.notes[0]?.id;
+   225→
+   226→      if (noteId) {
+   227→        const res = await request.get(`/api/notes/${noteId}`, {
+   228→          headers: { Cookie: `notespedia_token=${token}` },
+   229→        });
+   230→        const data = await res.json();
+   231→        expect(data.success).toBe(true);
+   232→        expect(data.note.id).toBe(noteId);
+   233→        expect(data.note.title).toBeDefined();
+   234→      }
+   235→    });
+   236→
+   237→    test('GET /api/notes/[id] - nonexistent note should 404', async ({ request }) => {
+   238→      const loginRes = await request.post('/api/auth', {
+   239→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   240→      });
+   241→      const { token } = await loginRes.json();
+   242→
+   243→      const res = await request.get('/api/notes/nonexistent-id-12345', {
+   244→        headers: { Cookie: `notespedia_token=${token}` },
+   245→      });
+   246→      expect(res.status()).toBe(404);
+   247→    });
+   248→  });
+   249→
+   250→  test.describe('Search API', () => {
+   251→    test('GET /api/search - keyword search', async ({ request }) => {
+   252→      const loginRes = await request.post('/api/auth', {
+   253→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   254→      });
+   255→      const { token } = await loginRes.json();
+   256→
+   257→      const res = await request.get('/api/search?q=Machine', {
+   258→        headers: { Cookie: `notespedia_token=${token}` },
+   259→      });
+   260→      const data = await res.json();
+   261→      expect(data.success).toBe(true);
+   262→      expect(data.notes).toBeDefined();
+   263→      expect(data.total).toBeGreaterThanOrEqual(0);
+   264→    });
+   265→
+   266→    test('GET /api/search - empty query', async ({ request }) => {
+   267→      const loginRes = await request.post('/api/auth', {
+   268→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   269→      });
+   270→      const { token } = await loginRes.json();
+   271→
+   272→      const res = await request.get('/api/search', {
+   273→        headers: { Cookie: `notespedia_token=${token}` },
+   274→      });
+   275→      const data = await res.json();
+   276→      expect(data.success).toBe(true);
+   277→    });
+   278→
+   279→    test('GET /api/search - no results for gibberish', async ({ request }) => {
+   280→      const loginRes = await request.post('/api/auth', {
+   281→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   282→      });
+   283→      const { token } = await loginRes.json();
+   284→
+   285→      const res = await request.get('/api/search?q=xyznonexistent12345', {
+   286→        headers: { Cookie: `notespedia_token=${token}` },
+   287→      });
+   288→      const data = await res.json();
+   289→      expect(data.success).toBe(true);
+   290→      expect(data.total).toBe(0);
+   291→    });
+   292→  });
+   293→
+   294→  test.describe('Bookmarks API', () => {
+   295→    test('POST /api/bookmarks - create folder', async ({ request }) => {
+   296→      const loginRes = await request.post('/api/auth', {
+   297→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   298→      });
+   299→      const { token } = await loginRes.json();
+   300→
+   301→      const res = await request.post('/api/bookmarks', {
+   302→        headers: { Cookie: `notespedia_token=${token}` },
+   303→        data: { action: 'createFolder', name: 'API Test Folder', color: '#10b981' },
+   304→      });
+   305→      const data = await res.json();
+   306→      expect(data.success).toBe(true);
+   307→      expect(data.folder.name).toBe('API Test Folder');
+   308→    });
+   309→
+   310→    test('GET /api/bookmarks - list bookmarks', async ({ request }) => {
+   311→      const loginRes = await request.post('/api/auth', {
+   312→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   313→      });
+   314→      const { token } = await loginRes.json();
+   315→
+   316→      const res = await request.get('/api/bookmarks', {
+   317→        headers: { Cookie: `notespedia_token=${token}` },
+   318→      });
+   319→      const data = await res.json();
+   320→      expect(data.success).toBe(true);
+   321→    });
+   322→
+   323→    test('POST /api/bookmarks - toggle bookmark on note', async ({ request }) => {
+   324→      const loginRes = await request.post('/api/auth', {
+   325→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   326→      });
+   327→      const { token } = await loginRes.json();
+   328→
+   329→      // Get a note ID first
+   330→      const notesRes = await request.get('/api/notes?limit=1', {
+   331→        headers: { Cookie: `notespedia_token=${token}` },
+   332→      });
+   333→      const notesData = await notesRes.json();
+   334→      const noteId = notesData.notes[0]?.id;
+   335→
+   336→      if (noteId) {
+   337→        const res = await request.post('/api/bookmarks', {
+   338→          headers: { Cookie: `notespedia_token=${token}` },
+   339→          data: { noteId },
+   340→        });
+   341→        const data = await res.json();
+   342→        expect(data.success).toBe(true);
+   343→      }
+   344→    });
+   345→  });
+   346→
+   347→  test.describe('Ratings API', () => {
+   348→    test('POST /api/ratings - rate someone else note', async ({ request }) => {
+   349→      // Login as admin (who didn't create most notes)
+   350→      const loginRes = await request.post('/api/auth', {
+   351→        data: { action: 'login', email: 'admin@notespedia.in', password: 'password123' },
+   352→      });
+   353→      const { token } = await loginRes.json();
+   354→
+   355→      // Get notes and find one not uploaded by admin
+   356→      const notesRes = await request.get('/api/notes?limit=10', {
+   357→        headers: { Cookie: `notespedia_token=${token}` },
+   358→      });
+   359→      const notesData = await notesRes.json();
+   360→      const note = notesData.notes?.find((n: { uploader: { id: string } }) => n.uploader?.id !== 'admin-id');
+   361→
+   362→      if (note) {
+   363→        const res = await request.post('/api/ratings', {
+   364→          headers: { Cookie: `notespedia_token=${token}` },
+   365→          data: { noteId: note.id, value: 4 },
+   366→        });
+   367→        const data = await res.json();
+   368→        expect(data.success).toBe(true);
+   369→      }
+   370→    });
+   371→
+   372→    test('POST /api/ratings - cannot rate own note', async ({ request }) => {
+   373→      const loginRes = await request.post('/api/auth', {
+   374→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   375→      });
+   376→      const { token } = await loginRes.json();
+   377→
+   378→      // Get Arjun's own notes
+   379→      const notesRes = await request.get('/api/notes?uploaderId=me&limit=1', {
+   380→        headers: { Cookie: `notespedia_token=${token}` },
+   381→      });
+   382→      const notesData = await notesRes.json();
+   383→      const noteId = notesData.notes?.[0]?.id;
+   384→
+   385→      if (noteId) {
+   386→        const res = await request.post('/api/ratings', {
+   387→          headers: { Cookie: `notespedia_token=${token}` },
+   388→          data: { noteId, value: 5 },
+   389→        });
+   390→        const data = await res.json();
+   391→        expect(data.success).toBe(false);
+   392→      }
+   393→    });
+   394→
+   395→    test('POST /api/ratings - invalid rating value', async ({ request }) => {
+   396→      const loginRes = await request.post('/api/auth', {
+   397→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   398→      });
+   399→      const { token } = await loginRes.json();
+   400→
+   401→      const res = await request.post('/api/ratings', {
+   402→        headers: { Cookie: `notespedia_token=${token}` },
+   403→        data: { noteId: 'some-id', value: 10 },
+   404→      });
+   405→      const data = await res.json();
+   406→      expect(data.success).toBe(false);
+   407→    });
+   408→  });
+   409→
+   410→  test.describe('Comments API', () => {
+   411→    test('POST /api/comments - add comment', async ({ request }) => {
+   412→      const loginRes = await request.post('/api/auth', {
+   413→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   414→      });
+   415→      const { token } = await loginRes.json();
+   416→
+   417→      const notesRes = await request.get('/api/notes?limit=1', {
+   418→        headers: { Cookie: `notespedia_token=${token}` },
+   419→      });
+   420→      const notesData = await notesRes.json();
+   421→      const noteId = notesData.notes[0]?.id;
+   422→
+   423→      if (noteId) {
+   424→        const res = await request.post('/api/comments', {
+   425→          headers: { Cookie: `notespedia_token=${token}` },
+   426→          data: { noteId, content: 'Great notes! - API Test' },
+   427→        });
+   428→        const data = await res.json();
+   429→        expect(data.success).toBe(true);
+   430→      }
+   431→    });
+   432→
+   433→    test('GET /api/comments - get comments for note', async ({ request }) => {
+   434→      const loginRes = await request.post('/api/auth', {
+   435→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   436→      });
+   437→      const { token } = await loginRes.json();
+   438→
+   439→      const notesRes = await request.get('/api/notes?limit=1', {
+   440→        headers: { Cookie: `notespedia_token=${token}` },
+   441→      });
+   442→      const notesData = await notesRes.json();
+   443→      const noteId = notesData.notes[0]?.id;
+   444→
+   445→      if (noteId) {
+   446→        const res = await request.get(`/api/comments?noteId=${noteId}`, {
+   447→          headers: { Cookie: `notespedia_token=${token}` },
+   448→        });
+   449→        const data = await res.json();
+   450→        expect(data.success).toBe(true);
+   451→      }
+   452→    });
+   453→  });
+   454→
+   455→  test.describe('Admin API', () => {
+   456→    test('GET /api/admin - admin access', async ({ request }) => {
+   457→      const loginRes = await request.post('/api/auth', {
+   458→        data: { action: 'login', email: 'admin@notespedia.in', password: 'password123' },
+   459→      });
+   460→      const { token } = await loginRes.json();
+   461→
+   462→      const res = await request.get('/api/admin', {
+   463→        headers: { Cookie: `notespedia_token=${token}` },
+   464→      });
+   465→      const data = await res.json();
+   466→      expect(data.success).toBe(true);
+   467→      expect(data.stats).toBeDefined();
+   468→      expect(data.stats.totalUsers).toBeGreaterThan(0);
+   469→      expect(data.stats.totalNotes).toBeGreaterThan(0);
+   470→    });
+   471→
+   472→    test('GET /api/admin - non-admin should be denied', async ({ request }) => {
+   473→      const loginRes = await request.post('/api/auth', {
+   474→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   475→      });
+   476→      const { token } = await loginRes.json();
+   477→
+   478→      const res = await request.get('/api/admin', {
+   479→        headers: { Cookie: `notespedia_token=${token}` },
+   480→      });
+   481→      expect(res.status()).toBe(403);
+   482→    });
+   483→  });
+   484→
+   485→  test.describe('Leaderboard API', () => {
+   486→    test('GET /api/leaderboard - returns rankings', async ({ request }) => {
+   487→      const loginRes = await request.post('/api/auth', {
+   488→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   489→      });
+   490→      const { token } = await loginRes.json();
+   491→
+   492→      const res = await request.get('/api/leaderboard', {
+   493→        headers: { Cookie: `notespedia_token=${token}` },
+   494→      });
+   495→      const data = await res.json();
+   496→      expect(data.success).toBe(true);
+   497→      expect(data.leaderboard.length).toBeGreaterThan(0);
+   498→      expect(data.leaderboard[0].rank).toBe(1);
+   499→    });
+   500→  });
+   501→
+   502→  test.describe('Colleges API', () => {
+   503→    test('GET /api/colleges - list colleges', async ({ request }) => {
+   504→      const res = await request.get('/api/colleges?limit=10');
+   505→      const data = await res.json();
+   506→      expect(data.success).toBe(true);
+   507→      expect(data.colleges.length).toBeGreaterThan(0);
+   508→    });
+   509→  });
+   510→
+   511→  test.describe('Subjects API', () => {
+   512→    test('GET /api/subjects - list subjects', async ({ request }) => {
+   513→      const res = await request.get('/api/subjects?limit=10');
+   514→      const data = await res.json();
+   515→      expect(data.success).toBe(true);
+   516→      expect(data.subjects.length).toBeGreaterThan(0);
+   517→    });
+   518→  });
+   519→
+   520→  test.describe('Notifications API', () => {
+   521→    test('GET /api/notifications - list notifications', async ({ request }) => {
+   522→      const loginRes = await request.post('/api/auth', {
+   523→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   524→      });
+   525→      const { token } = await loginRes.json();
+   526→
+   527→      const res = await request.get('/api/notifications', {
+   528→        headers: { Cookie: `notespedia_token=${token}` },
+   529→      });
+   530→      const data = await res.json();
+   531→      expect(data.success).toBe(true);
+   532→    });
+   533→  });
+   534→
+   535→  test.describe('Study Groups API', () => {
+   536→    test('GET /api/study-groups - list groups', async ({ request }) => {
+   537→      const loginRes = await request.post('/api/auth', {
+   538→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   539→      });
+   540→      const { token } = await loginRes.json();
+   541→
+   542→      const res = await request.get('/api/study-groups', {
+   543→        headers: { Cookie: `notespedia_token=${token}` },
+   544→      });
+   545→      const data = await res.json();
+   546→      expect(data.success).toBe(true);
+   547→    });
+   548→
+   549→    test('POST /api/study-groups - create group', async ({ request }) => {
+   550→      const loginRes = await request.post('/api/auth', {
+   551→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   552→      });
+   553→      const { token } = await loginRes.json();
+   554→
+   555→      const res = await request.post('/api/study-groups', {
+   556→        headers: { Cookie: `notespedia_token=${token}` },
+   557→        data: {
+   558→          name: 'API Test Study Group',
+   559→          description: 'Created by automated test',
+   560→          isPublic: true,
+   561→          maxMembers: 10,
+   562→        },
+   563→      });
+   564→      const data = await res.json();
+   565→      expect(data.success).toBe(true);
+   566→      expect(data.group.name).toBe('API Test Study Group');
+   567→    });
+   568→  });
+   569→
+   570→  test.describe('Upload API', () => {
+   571→    test('POST /api/upload - upload text file', async ({ request }) => {
+   572→      const loginRes = await request.post('/api/auth', {
+   573→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   574→      });
+   575→      const { token } = await loginRes.json();
+   576→
+   577→      const res = await request.post('/api/upload', {
+   578→        headers: { Cookie: `notespedia_token=${token}` },
+   579→        multipart: {
+   580→          file: {
+   581→            name: 'test-upload.txt',
+   582→            mimeType: 'text/plain',
+   583→            buffer: Buffer.from('Test content for upload API test.\nLine 2.\nLine 3.'),
+   584→          },
+   585→        },
+   586→      });
+   587→      const data = await res.json();
+   588→      expect(data.success).toBe(true);
+   589→      expect(data.filePath).toBeDefined();
+   590→    });
+   591→
+   592→    test('POST /api/upload - unauthenticated should fail', async ({ request }) => {
+   593→      const res = await request.post('/api/upload', {
+   594→        multipart: {
+   595→          file: {
+   596→            name: 'test.txt',
+   597→            mimeType: 'text/plain',
+   598→            buffer: Buffer.from('test'),
+   599→          },
+   600→        },
+   601→      });
+   602→      expect(res.status()).toBe(401);
+   603→    });
+   604→  });
+   605→
+   606→  test.describe('Users API', () => {
+   607→    test('GET /api/users/[id] - get user profile', async ({ request }) => {
+   608→      const loginRes = await request.post('/api/auth', {
+   609→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   610→      });
+   611→      const { token, user } = await loginRes.json();
+   612→
+   613→      const res = await request.get(`/api/users/${user.id}`, {
+   614→        headers: { Cookie: `notespedia_token=${token}` },
+   615→      });
+   616→      const data = await res.json();
+   617→      expect(data.success).toBe(true);
+   618→      expect(data.profile).toBeDefined();
+   619→    });
+   620→
+   621→    test('GET /api/users/[id] - email should be visible only to self', async ({ request }) => {
+   622→      // Login as Arjun
+   623→      const loginRes = await request.post('/api/auth', {
+   624→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   625→      });
+   626→      const { token } = await loginRes.json();
+   627→
+   628→      // Get Priya's profile (different user)
+   629→      const priyaLogin = await request.post('/api/auth', {
+   630→        data: { action: 'login', email: 'priya@aiims.edu', password: 'password123' },
+   631→      });
+   632→      const priyaData = await priyaLogin.json();
+   633→      const priyaId = priyaData.user?.id;
+   634→
+   635→      if (priyaId) {
+   636→        const res = await request.get(`/api/users/${priyaId}`, {
+   637→          headers: { Cookie: `notespedia_token=${token}` },
+   638→        });
+   639→        const data = await res.json();
+   640→        expect(data.success).toBe(true);
+   641→        // Email should NOT be in the response for other users
+   642→        expect(data.profile?.email).toBeUndefined();
+   643→      }
+   644→    });
+   645→
+   646→    test('GET /api/users/[id] - nonexistent user should 404', async ({ request }) => {
+   647→      const loginRes = await request.post('/api/auth', {
+   648→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   649→      });
+   650→      const { token } = await loginRes.json();
+   651→
+   652→      const res = await request.get('/api/users/nonexistent-id', {
+   653→        headers: { Cookie: `notespedia_token=${token}` },
+   654→      });
+   655→      expect(res.status()).toBe(404);
+   656→    });
+   657→  });
+   658→
+   659→  test.describe('Seed API Security', () => {
+   660→    test('POST /api/seed - unauthenticated should fail', async ({ request }) => {
+   661→      const res = await request.post('/api/seed', { data: {} });
+   662→      expect(res.status()).toBe(401);
+   663→    });
+   664→
+   665→    test('POST /api/seed - non-admin should be forbidden', async ({ request }) => {
+   666→      const loginRes = await request.post('/api/auth', {
+   667→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   668→      });
+   669→      const { token } = await loginRes.json();
+   670→
+   671→      const res = await request.post('/api/seed', {
+   672→        headers: { Cookie: `notespedia_token=${token}` },
+   673→        data: {},
+   674→      });
+   675→      const data = await res.json();
+   676→      expect(data.success).toBe(false);
+   677→      expect(data.error).toContain('Forbidden');
+   678→    });
+   679→  });
+   680→
+   681→  test.describe('AI Processing Security', () => {
+   682→    test('POST /api/ai/process - IDOR prevention', async ({ request }) => {
+   683→      // Login as Arjun
+   684→      const loginRes = await request.post('/api/auth', {
+   685→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   686→      });
+   687→      const { token } = await loginRes.json();
+   688→
+   689→      // Try to process a note that belongs to another user
+   690→      const res = await request.post('/api/ai/process', {
+   691→        headers: { Cookie: `notespedia_token=${token}` },
+   692→        data: { noteId: 'cmqmahjjm002pnwvx9t8xe9kc' }, // Priya's note
+   693→      });
+   694→      const data = await res.json();
+   695→      expect(data.success).toBe(false);
+   696→      expect(data.error).toContain('Forbidden');
+   697→    });
+   698→
+   699→    test('POST /api/ai/process - admin can process any note', async ({ request }) => {
+   700→      const loginRes = await request.post('/api/auth', {
+   701→        data: { action: 'login', email: 'admin@notespedia.in', password: 'password123' },
+   702→      });
+   703→      const { token } = await loginRes.json();
+   704→
+   705→      // Admin should be able to process any note (but we won't actually trigger it to save time)
+   706→      // Just verify the auth check passes
+   707→      const res = await request.post('/api/ai/process', {
+   708→        headers: { Cookie: `notespedia_token=${token}` },
+   709→        data: { noteId: 'nonexistent-note-id' },
+   710→      });
+   711→      const data = await res.json();
+   712→      // Should fail because note doesn't exist, but NOT because of IDOR
+   713→      expect(data.error).not.toContain('Forbidden');
+   714→    });
+   715→
+   716→    test('POST /api/ai/process - unauthenticated should fail', async ({ request }) => {
+   717→      const res = await request.post('/api/ai/process', {
+   718→        data: { noteId: 'some-note-id' },
+   719→      });
+   720→      expect(res.status()).toBe(401);
+   721→    });
+   722→  });
+   723→
+   724→  test.describe('Follows API', () => {
+   725→    test('POST /api/follows - follow a user', async ({ request }) => {
+   726→      const loginRes = await request.post('/api/auth', {
+   727→        data: { action: 'login', email: 'arjun@iitb.ac.in', password: 'password123' },
+   728→      });
+   729→      const { token } = await loginRes.json();
+   730→
+   731→      // Get Priya's ID
+   732→      const priyaLogin = await request.post('/api/auth', {
+   733→        data: { action: 'login', email: 'priya@aiims.edu', password: 'password123' },
+   734→      });
+   735→      const priyaData = await priyaLogin.json();
+   736→      const priyaId = priyaData.user?.id;
+   737→
+   738→      if (priyaId) {
+   739→        const res = await request.post('/api/follows', {
+   740→          headers: { Cookie: `notespedia_token=${token}` },
+   741→          data: { type: 'user', followingId: priyaId },
+   742→        });
+   743→        const data = await res.json();
+   744→        expect(data.success).toBe(true);
+   745→      }
+   746→    });
+   747→  });
+   748→});
+   749→

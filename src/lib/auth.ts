@@ -69,10 +69,16 @@ export async function getAuthUser(): Promise<{
         avatarUrl: true,
         role: true,
         emailVerified: true,
+        isActive: true,
       },
     });
 
-    return user;
+    // Suspended/deactivated users cannot authenticate
+    if (!user || !user.isActive) return null;
+
+    // Return without isActive to match the return type
+    const { isActive: _isActive, ...authUser } = user;
+    return authUser;
   } catch {
     return null;
   }

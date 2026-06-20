@@ -38,11 +38,9 @@ model User {
   notifications Notification[]
   reputationLogs ReputationLog[]
   achievements  UserAchievement[]
-  studyGroups   StudyGroupMember[]
   reports       Report[]  @relation("Reporter")
   adminActions  AdminAction[] @relation("AdminActor")
   downloads     Download[]
-  studyGroupCreated StudyGroup[]
   sessions      Session[]
 }
 
@@ -119,8 +117,6 @@ model College {
   notes       Note[]
   profiles    Profile[]
   follows     Follow[]
-  studyGroups StudyGroup[]
-
   @@index([name])
   @@index([country])
 }
@@ -160,8 +156,6 @@ model Subject {
   college    College?    @relation(fields: [collegeId], references: [id])
   notes      Note[]
   follows    Follow[]
-  studyGroups StudyGroup[]
-
   @@index([departmentId])
   @@index([collegeId])
   @@index([name])
@@ -486,47 +480,6 @@ model UserAchievement {
   achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
 
   @@unique([userId, achievementId])
-  @@index([userId])
-}
-
-// ============================================================
-// STUDY GROUPS
-// ============================================================
-
-model StudyGroup {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  subjectId   String?
-  collegeId   String?
-  creatorId   String
-  isPublic    Boolean  @default(true)
-  memberCount Int      @default(1)
-  maxMembers  Int      @default(50)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  creator  User               @relation(fields: [creatorId], references: [id])
-  subject  Subject?           @relation(fields: [subjectId], references: [id])
-  college  College?           @relation(fields: [collegeId], references: [id])
-  members  StudyGroupMember[]
-
-  @@index([creatorId])
-  @@index([subjectId])
-}
-
-model StudyGroupMember {
-  id        String   @id @default(cuid())
-  groupId   String
-  userId    String
-  role      String   @default("member") // admin, moderator, member
-  joinedAt  DateTime @default(now())
-
-  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([groupId, userId])
-  @@index([groupId])
   @@index([userId])
 }
 

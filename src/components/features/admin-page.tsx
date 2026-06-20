@@ -375,7 +375,7 @@ function OverviewTab({ onTabChange }: { onTabChange: (tab: string) => void }) {
         <StatCard title="Downloads" value={stats.totalDownloads} icon={Download} subtitle="All time" color="bg-amber-500" />
         <StatCard title="Colleges" value={stats.totalColleges} icon={GraduationCap} subtitle="Registered" color="bg-rose-500" />
         <StatCard title="Pending Reports" value={stats.pendingReports} icon={AlertTriangle} subtitle="Need review" color="bg-orange-500" />
-        <StatCard title="Active Today" value={stats.activeUsersToday} icon={Activity} subtitle="Users" color="bg-cyan-500" />
+        <StatCard title="New Today" value={stats.newUsersToday} icon={Activity} subtitle="Users" color="bg-cyan-500" />
       </motion.div>
 
       {/* Quick Actions */}

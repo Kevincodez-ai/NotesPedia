@@ -230,6 +230,11 @@ correctAnswer must be one of: A, B, C, D` },
 // GET endpoint to check processing status
 export async function GET(request: NextRequest) {
   try {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const noteId = searchParams.get('noteId');
 
@@ -247,6 +252,11 @@ export async function GET(request: NextRequest) {
 
     if (!note) {
       return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
+    }
+
+    // Only owner or admin/moderator can check processing status
+    if (note.uploaderId !== user.id && !hasRole(user.role, ['admin', 'moderator'])) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
     return NextResponse.json({

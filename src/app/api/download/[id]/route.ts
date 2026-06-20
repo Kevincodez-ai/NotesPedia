@@ -28,7 +28,7 @@ export async function GET(
       },
     });
 
-    if (!note || note.status === 'removed') {
+    if (!note || note.status === 'removed' || note.status === 'flagged') {
       return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
     }
 
@@ -79,15 +79,18 @@ export async function GET(
             'Content-Length': String(fileBuffer.length),
           },
         });
-      } catch {
-        // File not found on disk, fall through to extractedText
+      } catch (fileError) {
+        // File not found on disk - log the issue and fall through to extractedText
+        console.warn(`Download: file not found on disk for note ${note.id} at path ${note.filePath}`, fileError);
       }
     }
 
     // If extractedText exists, generate a .txt file
     if (note.extractedText) {
       const textBuffer = Buffer.from(note.extractedText, 'utf-8');
-      const fileName = `${note.title.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+      // Use a clear naming convention: indicate this is extracted text content
+      const baseName = note.title.replace(/[^a-zA-Z0-9]/g, '_');
+      const fileName = `${baseName}_extracted.txt`;
 
       return new NextResponse(textBuffer, {
         headers: {

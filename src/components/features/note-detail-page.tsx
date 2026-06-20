@@ -1169,10 +1169,29 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <Button
             className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-            onClick={() => {
-              const link = document.createElement('a');
-              link.href = `/api/download/${note.id}`;
-              link.click();
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/download/${note.id}`);
+                if (!res.ok) {
+                  const data = await res.json().catch(() => null);
+                  toast.error(data?.error || 'Download failed — no file available for this note');
+                  return;
+                }
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const disposition = res.headers.get('Content-Disposition');
+                const match = disposition?.match(/filename="?(.+?)"?$/);
+                a.download = match?.[1] || `${note.title.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                toast.success('Download started!');
+              } catch {
+                toast.error('Download failed — please try again');
+              }
             }}
           >
             <Download className="size-4" /> Download

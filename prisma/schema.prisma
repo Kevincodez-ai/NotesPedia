@@ -1,0 +1,584 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// AUTH & USERS
+// ============================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  passwordHash  String?
+  avatarUrl     String?
+  bio           String?
+  role          String   @default("student") // guest, student, verified_student, contributor, moderator, admin, super_admin
+  emailVerified Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  provider      String   @default("email") // email, google, github
+  providerId    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profile       Profile?
+  notes         Note[]
+  comments      Comment[]
+  ratings       Rating[]
+  reviews       Review[]
+  bookmarks     Bookmark[]
+  bookmarkFolders BookmarkFolder[]
+  followsGiven  Follow[]  @relation("FollowsGiven")
+  followsReceived Follow[] @relation("FollowsReceived")
+  notifications Notification[]
+  reputationLogs ReputationLog[]
+  achievements  UserAchievement[]
+  studyGroups   StudyGroupMember[]
+  reports       Report[]  @relation("Reporter")
+  adminActions  AdminAction[] @relation("AdminActor")
+  downloads     Download[]
+  studyGroupCreated StudyGroup[]
+  sessions      Session[]
+}
+
+model Profile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  collegeId       String?
+  departmentId    String?
+  semester        Int?
+  year            Int?
+  contributionScore Int    @default(0)
+  reputationScore Int     @default(0)
+  uploadCount     Int     @default(0)
+  downloadCount   Int     @default(0)
+  followerCount   Int     @default(0)
+  followingCount  Int     @default(0)
+  noteCount       Int     @default(0)
+  isOnboarded     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college    College?   @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@index([userId])
+  @@index([collegeId])
+  @@index([contributionScore])
+  @@index([reputationScore])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ============================================================
+// COLLEGE SYSTEM
+// ============================================================
+
+model College {
+  id          String   @id @default(cuid())
+  name        String
+  shortName   String?
+  city        String?
+  state       String?
+  country     String?
+  type        String?  // university, college, institute
+  website     String?
+  logoUrl     String?
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  departments Department[]
+  subjects    Subject[]
+  notes       Note[]
+  profiles    Profile[]
+  follows     Follow[]
+  studyGroups StudyGroup[]
+
+  @@index([name])
+  @@index([country])
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  code        String?
+  collegeId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  college  College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  subjects Subject[]
+  notes    Note[]
+  profiles Profile[]
+
+  @@index([collegeId])
+  @@index([name])
+}
+
+model Subject {
+  id          String   @id @default(cuid())
+  name        String
+  code        String?
+  semester    Int?
+  departmentId String?
+  collegeId   String?
+  description String?
+  iconUrl     String?
+  noteCount   Int      @default(0)
+  followerCount Int    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  department Department? @relation(fields: [departmentId], references: [id])
+  college    College?    @relation(fields: [collegeId], references: [id])
+  notes      Note[]
+  follows    Follow[]
+  studyGroups StudyGroup[]
+
+  @@index([departmentId])
+  @@index([collegeId])
+  @@index([name])
+}
+
+// ============================================================
+// NOTES SYSTEM
+// ============================================================
+
+model Note {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  filePath      String?
+  fileType      String?  // pdf, docx, pptx, txt, md, image
+  fileSize      Int?
+  thumbnailUrl  String?
+  previewText   String?
+  extractedText String?
+  subjectId     String?
+  collegeId     String?
+  departmentId  String?
+  semester      Int?
+  uploaderId    String
+  version       Int      @default(1)
+  status        String   @default("active") // active, processing, flagged, removed, draft
+  isPublic      Boolean  @default(true)
+  downloadCount Int      @default(0)
+  viewCount     Int      @default(0)
+  bookmarkCount Int      @default(0)
+  commentCount  Int      @default(0)
+  avgRating     Float    @default(0)
+  ratingCount   Int      @default(0)
+  qualityScore  Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  uploader    User        @relation(fields: [uploaderId], references: [id])
+  subject     Subject?    @relation(fields: [subjectId], references: [id])
+  college     College?    @relation(fields: [collegeId], references: [id])
+  department  Department? @relation(fields: [departmentId], references: [id])
+  tags        NoteTag[]
+  versions    NoteVersion[]
+  downloads   Download[]
+  ratings     Rating[]
+  reviews     Review[]
+  bookmarks   Bookmark[]
+  comments    Comment[]
+  aiSummary   AISummary?
+  flashcards  Flashcard[]
+  mcqs        MCQ[]
+  reports     Report[]
+
+  @@index([uploaderId])
+  @@index([subjectId])
+  @@index([collegeId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([downloadCount])
+  @@index([avgRating])
+}
+
+model NoteTag {
+  id     String @id @default(cuid())
+  noteId String
+  tag    String
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@index([tag])
+}
+
+model NoteVersion {
+  id        String   @id @default(cuid())
+  noteId    String
+  version   Int
+  filePath  String?
+  changeLog String?
+  createdAt DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+}
+
+// ============================================================
+// AI GENERATED CONTENT
+// ============================================================
+
+model AISummary {
+  id                  String   @id @default(cuid())
+  noteId              String   @unique
+  summary             String?
+  keywords            String?  // comma-separated
+  concepts            String?  // comma-separated
+  learningObjectives  String?  // comma-separated
+  importantQuestions  String?  // comma-separated
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+}
+
+model Flashcard {
+  id        String   @id @default(cuid())
+  noteId    String
+  question  String
+  answer    String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+}
+
+model MCQ {
+  id        String   @id @default(cuid())
+  noteId    String
+  question  String
+  optionA   String
+  optionB   String
+  optionC   String
+  optionD   String
+  correctAnswer String // A, B, C, D
+  explanation String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+}
+
+// ============================================================
+// ENGAGEMENT
+// ============================================================
+
+model Download {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, userId])
+  @@index([noteId])
+  @@index([userId])
+}
+
+model Rating {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  value     Int      // 1-5
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, userId])
+  @@index([noteId])
+  @@index([userId])
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  noteId      String
+  userId      String
+  content     String
+  helpfulCount Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@index([userId])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  folderId  String?
+  createdAt DateTime @default(now())
+
+  note   Note           @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder BookmarkFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@unique([noteId, userId])
+  @@index([userId])
+  @@index([noteId])
+  @@index([folderId])
+}
+
+model BookmarkFolder {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String
+  color     String?
+  icon      String?
+  createdAt DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookmarks Bookmark[]
+
+  @@index([userId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  parentId  String?
+  content   String
+  isEdited  Boolean  @default(false)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  note     Note      @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
+  @@index([noteId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+// ============================================================
+// SOCIAL
+// ============================================================
+
+model Follow {
+  id         String   @id @default(cuid())
+  followerId String
+  followingId String?
+  subjectId  String?
+  collegeId  String?
+  type       String   // user, subject, college
+  createdAt  DateTime @default(now())
+
+  follower  User     @relation("FollowsGiven", fields: [followerId], references: [id], onDelete: Cascade)
+  following User?    @relation("FollowsReceived", fields: [followingId], references: [id], onDelete: Cascade)
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  college   College? @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId, subjectId, collegeId])
+  @@index([followerId])
+  @@index([followingId])
+  @@index([subjectId])
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // comment, rating, follow, download, mention, system, achievement
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ============================================================
+// REPUTATION & ACHIEVEMENTS
+// ============================================================
+
+model ReputationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   // upload, rating_received, download, helpful_review, comment
+  points    Int
+  noteId    String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String?
+  category    String   // upload, social, academic, streak
+  threshold   Int
+  createdAt   DateTime @default(now())
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+// ============================================================
+// STUDY GROUPS
+// ============================================================
+
+model StudyGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  subjectId   String?
+  collegeId   String?
+  creatorId   String
+  isPublic    Boolean  @default(true)
+  memberCount Int      @default(1)
+  maxMembers  Int      @default(50)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator  User               @relation(fields: [creatorId], references: [id])
+  subject  Subject?           @relation(fields: [subjectId], references: [id])
+  college  College?           @relation(fields: [collegeId], references: [id])
+  members  StudyGroupMember[]
+
+  @@index([creatorId])
+  @@index([subjectId])
+}
+
+model StudyGroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  role      String   @default("member") // admin, moderator, member
+  joinedAt  DateTime @default(now())
+
+  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+// ============================================================
+// MODERATION
+// ============================================================
+
+model Report {
+  id          String   @id @default(cuid())
+  reporterId  String
+  targetId    String
+  targetType  String   // note, user, comment
+  reason      String
+  description String?
+  status      String   @default("pending") // pending, reviewed, resolved, dismissed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reporter User @relation("Reporter", fields: [reporterId], references: [id])
+  note     Note? @relation(fields: [targetId], references: [id])
+
+  @@index([status])
+  @@index([reporterId])
+  @@index([targetType])
+}
+
+model AdminAction {
+  id          String   @id @default(cuid())
+  adminId     String
+  targetId    String
+  targetType  String   // user, note, comment
+  action      String   // ban, suspend, remove, warn, restore
+  reason      String
+  createdAt   DateTime @default(now())
+
+  admin User @relation("AdminActor", fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([targetType])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  target    String?
+  details   String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}

@@ -133,10 +133,11 @@ function RatingWidget({ noteId, currentRating, avgRating, ratingCount }: { noteI
             key={star}
             type="button"
             aria-label={`Rate ${star} stars`}
-            className="p-0.5 hover:scale-125 transition-transform"
+            className="p-0.5 hover:scale-125 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
             onMouseEnter={() => setHoverRating(star)}
             onMouseLeave={() => setHoverRating(0)}
-            onClick={() => rateMutation.mutate(star)}
+            onClick={() => !rateMutation.isPending && rateMutation.mutate(star)}
+            disabled={rateMutation.isPending}
           >
             <Star
               className={`size-5 ${

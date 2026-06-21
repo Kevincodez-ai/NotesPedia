@@ -13,33 +13,42 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { token, password } = resetPasswordSchema.parse(body);
 
-    // Find valid reset token
-    const resetEntry = await db.passwordReset.findFirst({
-      where: {
-        token,
-        used: false,
-        expiresAt: { gt: new Date() },
-      },
+    // Use a transaction to prevent race conditions:
+    // 1. Find & lock the valid token
+    // 2. Update the password
+    // 3. Mark token as used — all atomically
+    const result = await db.$transaction(async (tx) => {
+      const resetEntry = await tx.passwordReset.findFirst({
+        where: {
+          token,
+          used: false,
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      if (!resetEntry) {
+        throw new Error('INVALID_TOKEN');
+      }
+
+      // Mark token as used FIRST to prevent concurrent reuse
+      await tx.passwordReset.update({
+        where: { id: resetEntry.id },
+        data: { used: true },
+      });
+
+      // Hash and update password
+      const passwordHash = await hashPassword(password);
+      await tx.user.update({
+        where: { email: resetEntry.email },
+        data: { passwordHash },
+      });
+
+      return { email: resetEntry.email };
     });
 
-    if (!resetEntry) {
+    if (!result) {
       return NextResponse.json({ success: false, error: 'Invalid or expired reset token' }, { status: 400 });
     }
-
-    // Hash new password
-    const passwordHash = await hashPassword(password);
-
-    // Update user password
-    await db.user.update({
-      where: { email: resetEntry.email },
-      data: { passwordHash },
-    });
-
-    // Mark token as used
-    await db.passwordReset.update({
-      where: { id: resetEntry.id },
-      data: { used: true },
-    });
 
     return NextResponse.json({ success: true, message: 'Password reset successfully' });
   } catch (error) {
@@ -47,6 +56,12 @@ export async function POST(request: NextRequest) {
       const firstIssue = error.issues?.[0];
       return NextResponse.json({ success: false, error: firstIssue?.message || 'Validation error' }, { status: 400 });
     }
+
+    // Handle transaction-level error for invalid/expired token
+    if (error instanceof Error && error.message === 'INVALID_TOKEN') {
+      return NextResponse.json({ success: false, error: 'Invalid or expired reset token' }, { status: 400 });
+    }
+
     console.error('Reset password error:', error);
     return NextResponse.json({ success: false, error: 'Failed to reset password' }, { status: 500 });
   }

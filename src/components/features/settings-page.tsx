@@ -282,6 +282,7 @@ function ProfileTab() {
               onChange={(e) => setBio(e.target.value)}
               placeholder="Tell us about yourself..."
               rows={3}
+              maxLength={200}
               className="resize-none"
             />
             <p className="text-[10px] text-muted-foreground">{bio.length}/200 characters</p>

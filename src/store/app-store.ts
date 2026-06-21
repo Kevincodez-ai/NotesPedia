@@ -80,6 +80,9 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 }));
 
+// AbortController for revalidateAuth — abort previous request if a new one starts
+let authAbortController: AbortController | null = null;
+
 /**
  * Re-validate auth by reading the cookie via /api/auth.
  * Used when tab regains focus or when another tab signals an auth change.
@@ -88,8 +91,16 @@ export const useAppStore = create<AppState>((set) => ({
 export async function revalidateAuth() {
   const wasAuthenticated = useAppStore.getState().isAuthenticated;
   const wasLocal = lastAuthActionWasLocal;
+
+  // Abort any in-flight auth check to prevent stale responses
+  if (authAbortController) {
+    authAbortController.abort();
+  }
+  authAbortController = new AbortController();
+  const { signal } = authAbortController;
+
   try {
-    const res = await fetch('/api/auth');
+    const res = await fetch('/api/auth', { signal });
     const data = await res.json();
     if (data.success && data.user) {
       useAppStore.getState().setUser(data.user);
@@ -104,8 +115,11 @@ export async function revalidateAuth() {
         });
       }
     }
-  } catch {
-    useAppStore.getState().setUser(null);
+  } catch (err) {
+    // Ignore abort errors — they're expected when a new request supersedes an old one
+    if (err instanceof DOMException && err.name === 'AbortError') return;
+    // On network errors, don't log the user out — they might just be offline
+    console.warn('Auth revalidation failed (network error):', err);
   }
 }
 
@@ -163,5 +177,8 @@ export function setupCrossTabAuthSync() {
     window.removeEventListener('storage', handleStorageChange);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     clearInterval(interval);
+    if (authAbortController) {
+      authAbortController.abort();
+    }
   };
 }

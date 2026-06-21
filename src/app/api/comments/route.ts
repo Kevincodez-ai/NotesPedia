@@ -109,9 +109,9 @@ export async function DELETE(request: NextRequest) {
       data: { isDeleted: true },
     });
 
-    // Decrement note's commentCount
-    await db.note.update({
-      where: { id: comment.noteId },
+    // Decrement note's commentCount (guard against going negative)
+    await db.note.updateMany({
+      where: { id: comment.noteId, commentCount: { gt: 0 } },
       data: { commentCount: { decrement: 1 } },
     });
 

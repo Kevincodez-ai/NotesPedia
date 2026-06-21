@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -110,6 +110,17 @@ export function UploadPage() {
   const [uploadStage, setUploadStage] = useState<'idle' | 'uploading' | 'creating' | 'success' | 'error'>('idle');
   const [createdNoteId, setCreatedNoteId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const submittingRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Fetch subjects and colleges
   const { data: subjectsData } = useQuery({ queryKey: ['upload-subjects'], queryFn: fetchSubjects });
@@ -191,6 +202,17 @@ export function UploadPage() {
   const handleSubmit = async () => {
     if (!file || !title.trim()) return;
 
+    // Double-submit guard: prevent rapid clicks from firing multiple uploads
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
+    // Abort any previous upload
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
     setUploadStage('uploading');
     setErrorMessage('');
 
@@ -202,7 +224,10 @@ export function UploadPage() {
       const uploadRes = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
+        signal,
       });
+
+      if (signal.aborted) return;
 
       if (!uploadRes.ok) {
         let errData;
@@ -236,7 +261,10 @@ export function UploadPage() {
           extractedText: uploadData.extractedText || undefined,
           previewText: uploadData.extractedText?.slice(0, 500) || undefined,
         }),
+        signal,
       });
+
+      if (signal.aborted) return;
 
       if (!noteRes.ok) {
         let errData;
@@ -262,8 +290,12 @@ export function UploadPage() {
       setCreatedNoteId(noteData.note.id);
       setUploadStage('success');
     } catch (err) {
+      // Don't update state if the request was aborted (user navigated away)
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setErrorMessage(err instanceof Error ? err.message : 'Something went wrong');
       setUploadStage('error');
+    } finally {
+      submittingRef.current = false;
     }
   };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -226,9 +226,24 @@ export function NotesPage() {
   const [semester, setSemester] = useState<string>('_all');
   const [sortBy, setSortBy] = useState<string>('date');
   const [fileType, setFileType] = useState<string>('_all');
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const limit = 12;
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bookmarkingRef = useRef<Set<string>>(new Set());
+
+  // Debounce search input → search query
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearchQuery(searchInput);
+      setPage(1);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchInput]);
 
   // Fetch subjects and colleges for filters
   const { data: subjectsData } = useQuery({
@@ -264,21 +279,28 @@ export function NotesPage() {
 
   const handleBookmark = useCallback(async (e: React.MouseEvent, note: NoteCard) => {
     e.stopPropagation();
+    // Prevent rapid double-clicks
+    if (bookmarkingRef.current.has(note.id)) return;
+    bookmarkingRef.current.add(note.id);
     try {
       if (note.isBookmarked) {
-        await fetch(`/api/bookmarks?noteId=${note.id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/bookmarks?noteId=${note.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed');
       } else {
-        await fetch('/api/bookmarks', {
+        const res = await fetch('/api/bookmarks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ noteId: note.id }),
         });
+        if (!res.ok) throw new Error('Failed');
       }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       queryClient.invalidateQueries({ queryKey: ['search'] });
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     } catch {
       toast.error('Failed to update bookmark. Please try again.');
+    } finally {
+      bookmarkingRef.current.delete(note.id);
     }
   }, [queryClient]);
 
@@ -287,6 +309,7 @@ export function NotesPage() {
     setSemester('_all');
     setSortBy('date');
     setFileType('_all');
+    setSearchInput('');
     setSearchQuery('');
     setPage(1);
   };
@@ -334,13 +357,13 @@ export function NotesPage() {
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
                   <Input
                     placeholder="Search notes..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
                     className="h-9 text-xs pl-8"
                   />
-                  {searchQuery && (
+                  {searchInput && (
                     <button
-                      onClick={() => { setSearchQuery(''); setPage(1); }}
+                      onClick={() => { setSearchInput(''); setSearchQuery(''); setPage(1); }}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2"
                     >
                       <X className="size-3.5 text-muted-foreground hover:text-foreground" />

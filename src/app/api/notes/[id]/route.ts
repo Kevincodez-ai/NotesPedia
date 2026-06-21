@@ -51,39 +51,48 @@ export async function PUT(
     if (semester !== undefined) updateData.semester = semester || null;
     if (isPublic !== undefined) updateData.isPublic = isPublic;
 
-    // Handle tags: delete existing and create new ones
-    if (tags !== undefined) {
-      await db.noteTag.deleteMany({ where: { noteId: id } });
-      if (Array.isArray(tags) && tags.length > 0) {
-        updateData.tags = {
-          create: tags.map((tag: string) => ({ tag: tag.trim() })),
-        };
+    // Use a transaction to prevent race conditions on version increment
+    const updatedNote = await db.$transaction(async (tx) => {
+      // Re-fetch note inside transaction to get the latest version
+      const currentNote = await tx.note.findUnique({ where: { id }, select: { version: true, filePath: true } });
+      if (!currentNote) throw new Error('NOTE_NOT_FOUND');
+
+      const newVersion = currentNote.version + 1;
+
+      // Handle tags: delete existing and create new ones
+      if (tags !== undefined) {
+        await tx.noteTag.deleteMany({ where: { noteId: id } });
+        if (Array.isArray(tags) && tags.length > 0) {
+          updateData.tags = {
+            create: tags.map((tag: string) => ({ tag: tag.trim() })),
+          };
+        }
       }
-    }
 
-    // Increment version
-    updateData.version = existingNote.version + 1;
+      // Atomic version increment
+      updateData.version = newVersion;
 
-    // Create a version record
-    await db.noteVersion.create({
-      data: {
-        noteId: id,
-        version: existingNote.version + 1,
-        filePath: existingNote.filePath,
-        changeLog: `Updated note`,
-      },
-    });
+      // Create a version record
+      await tx.noteVersion.create({
+        data: {
+          noteId: id,
+          version: newVersion,
+          filePath: currentNote.filePath,
+          changeLog: `Updated note`,
+        },
+      });
 
-    const updatedNote = await db.note.update({
-      where: { id },
-      data: updateData,
-      include: {
-        uploader: { select: { id: true, name: true, avatarUrl: true } },
-        subject: { select: { id: true, name: true } },
-        college: { select: { id: true, name: true } },
-        department: { select: { id: true, name: true } },
-        tags: { select: { tag: true } },
-      },
+      return tx.note.update({
+        where: { id },
+        data: updateData,
+        include: {
+          uploader: { select: { id: true, name: true, avatarUrl: true } },
+          subject: { select: { id: true, name: true } },
+          college: { select: { id: true, name: true } },
+          department: { select: { id: true, name: true } },
+          tags: { select: { tag: true } },
+        },
+      });
     });
 
     return NextResponse.json({

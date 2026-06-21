@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { getSupabaseAdmin, isStorageConfigured, STORAGE_BUCKET } from '@/lib/supabase';
@@ -13,6 +14,16 @@ export async function GET(
     const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Rate limit downloads
+    const clientId = getClientIdentifier(request, user.id);
+    const { allowed } = rateLimiter.check(`download:${clientId}`, RateLimits.download.limit, RateLimits.download.windowMs);
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Download limit reached. Please try again later.' },
+        { status: 429 }
+      );
     }
 
     const { id } = await params;
@@ -48,11 +59,45 @@ export async function GET(
           .createSignedUrl(note.storageKey, 3600); // 1 hour expiry
 
         if (!signedUrlError && signedUrlData?.signedUrl) {
+          // Track download in a transaction (atomic: increment + record + reputation)
+          await db.$transaction(async (tx) => {
+            await tx.note.update({
+              where: { id: note.id },
+              data: { downloadCount: { increment: 1 } },
+            });
+            try {
+              await tx.download.create({
+                data: { noteId: note.id, userId: user.id },
+              });
+            } catch {
+              // Already downloaded before — that's fine
+            }
+            if (note.uploaderId !== user.id) {
+              try {
+                await tx.profile.update({
+                  where: { userId: note.uploaderId },
+                  data: {
+                    downloadCount: { increment: 1 },
+                    reputationScore: { increment: 2 },
+                  },
+                });
+                await tx.reputationLog.create({
+                  data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
+                });
+              } catch {
+                // Uploader may not have a profile yet
+              }
+            }
+          });
+
           // Redirect to the signed URL
           return NextResponse.redirect(signedUrlData.signedUrl);
         }
       }
     }
+
+    // Track whether we already counted this download (prevents double counting)
+    let downloadCounted = false;
 
     // If filePath exists, serve the actual file
     if (note.filePath) {
@@ -61,38 +106,37 @@ export async function GET(
         const fileBuffer = await readFile(fullPath);
         const fileName = `${note.title.replace(/[^a-zA-Z0-9]/g, '_')}.${note.fileType || 'txt'}`;
 
-        // Increment download count and track AFTER successful file read
-        await db.note.update({
-          where: { id: note.id },
-          data: { downloadCount: { increment: 1 } },
-        });
-
-        // Create download record (ignore if already exists due to unique constraint)
-        try {
-          await db.download.create({
-            data: { noteId: note.id, userId: user.id },
+        // Track download atomically
+        downloadCounted = true;
+        await db.$transaction(async (tx) => {
+          await tx.note.update({
+            where: { id: note.id },
+            data: { downloadCount: { increment: 1 } },
           });
-        } catch {
-          // Already downloaded before - that's fine, still allow download
-        }
-
-        // Award reputation to uploader
-        if (note.uploaderId !== user.id) {
           try {
-            await db.profile.update({
-              where: { userId: note.uploaderId },
-              data: {
-                downloadCount: { increment: 1 },
-                reputationScore: { increment: 2 },
-              },
-            });
-            await db.reputationLog.create({
-              data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
+            await tx.download.create({
+              data: { noteId: note.id, userId: user.id },
             });
           } catch {
-            // Uploader may not have a profile yet
+            // Already downloaded before — that's fine
           }
-        }
+          if (note.uploaderId !== user.id) {
+            try {
+              await tx.profile.update({
+                where: { userId: note.uploaderId },
+                data: {
+                  downloadCount: { increment: 1 },
+                  reputationScore: { increment: 2 },
+                },
+              });
+              await tx.reputationLog.create({
+                data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
+              });
+            } catch {
+              // Uploader may not have a profile yet
+            }
+          }
+        });
 
         return new NextResponse(fileBuffer, {
           headers: {
@@ -110,39 +154,41 @@ export async function GET(
     // If extractedText exists, generate a .txt file
     if (note.extractedText) {
       const textBuffer = Buffer.from(note.extractedText, 'utf-8');
-      // Use a clear naming convention: indicate this is extracted text content
       const baseName = note.title.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `${baseName}_extracted.txt`;
 
-      // Increment download count for extracted text too
-      await db.note.update({
-        where: { id: note.id },
-        data: { downloadCount: { increment: 1 } },
-      });
-
-      try {
-        await db.download.create({
-          data: { noteId: note.id, userId: user.id },
+      // Only increment download count if we haven't already (prevents double counting
+      // when filePath read fails and falls through to extractedText)
+      if (!downloadCounted) {
+        await db.$transaction(async (tx) => {
+          await tx.note.update({
+            where: { id: note.id },
+            data: { downloadCount: { increment: 1 } },
+          });
+          try {
+            await tx.download.create({
+              data: { noteId: note.id, userId: user.id },
+            });
+          } catch {
+            // Already downloaded before
+          }
+          if (note.uploaderId !== user.id) {
+            try {
+              await tx.profile.update({
+                where: { userId: note.uploaderId },
+                data: {
+                  downloadCount: { increment: 1 },
+                  reputationScore: { increment: 2 },
+                },
+              });
+              await tx.reputationLog.create({
+                data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
+              });
+            } catch {
+              // Uploader may not have a profile yet
+            }
+          }
         });
-      } catch {
-        // Already downloaded before
-      }
-
-      if (note.uploaderId !== user.id) {
-        try {
-          await db.profile.update({
-            where: { userId: note.uploaderId },
-            data: {
-              downloadCount: { increment: 1 },
-              reputationScore: { increment: 2 },
-            },
-          });
-          await db.reputationLog.create({
-            data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
-          });
-        } catch {
-          // Uploader may not have a profile yet
-        }
       }
 
       return new NextResponse(textBuffer, {

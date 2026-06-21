@@ -643,10 +643,10 @@
    643→                          <DropdownMenuItem
    644→                            className="text-destructive focus:text-destructive"
    645→                            onClick={() => handleSuspendUser(u.id, u.name)}
-   646→                            disabled={adminActionMutation.isPending}
+   646→                            disabled={adminActionMutation.isPending || u.id === user?.id}
    647→                          >
    648→                            <Ban className="size-3.5 mr-2" />
-   649→                            Suspend User
+   649→                            {u.id === user?.id ? 'Cannot Suspend Self' : 'Suspend User'}
    650→                          </DropdownMenuItem>
    651→                        ) : (
    652→                          <DropdownMenuItem

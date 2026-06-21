@@ -78,11 +78,24 @@ export async function POST(request: NextRequest) {
     // Truncate very long text to avoid token limits
     const truncatedText = contentText.length > 8000 ? contentText.slice(0, 8000) + '...' : contentText;
 
+    // Check if note is already being processed (prevent duplicate processing)
+    if (note.status === 'processing') {
+      return NextResponse.json(
+        { success: false, error: 'Note is already being processed. Please wait.' },
+        { status: 409 }
+      );
+    }
+
     // Update note status to processing
     await db.note.update({
       where: { id: noteId },
       data: { status: 'processing' },
     });
+
+    // Track what succeeded so we can save partial results on failure
+    let summaryData: Record<string, string> | null = null;
+    let flashcards: Array<{ question: string; answer: string }> = [];
+    let mcqs: Array<{ question: string; optionA: string; optionB: string; optionC: string; optionD: string; correctAnswer: string; explanation: string }> = [];
 
     try {
       // 1. Generate Summary
@@ -101,7 +114,6 @@ Respond ONLY with valid JSON in this exact format:
 {"summary": "...", "keywords": "...", "concepts": "...", "learningObjectives": "...", "importantQuestions": "..."}` },
       ]);
 
-      let summaryData: Record<string, string>;
       try {
         summaryData = JSON.parse(cleanJSON(summaryResponse));
       } catch {
@@ -113,7 +125,11 @@ Respond ONLY with valid JSON in this exact format:
           importantQuestions: '',
         };
       }
+    } catch (err) {
+      console.error('AI summary generation failed:', err);
+    }
 
+    try {
       // 2. Generate Flashcards
       const flashcardResponse = await callAI([
         { role: 'assistant', content: SYSTEM_PROMPT },
@@ -125,14 +141,17 @@ Respond ONLY with valid JSON array in this exact format:
 [{"question": "...", "answer": "..."}, {"question": "...", "answer": "..."}, ...]` },
       ]);
 
-      let flashcards: Array<{ question: string; answer: string }>;
       try {
         flashcards = JSON.parse(cleanJSON(flashcardResponse));
         if (!Array.isArray(flashcards)) flashcards = [];
       } catch {
         flashcards = [];
       }
+    } catch (err) {
+      console.error('AI flashcard generation failed:', err);
+    }
 
+    try {
       // 3. Generate MCQs
       const mcqResponse = await callAI([
         { role: 'assistant', content: SYSTEM_PROMPT },
@@ -146,89 +165,114 @@ Respond ONLY with valid JSON array in this exact format:
 correctAnswer must be one of: A, B, C, D` },
       ]);
 
-      let mcqs: Array<{ question: string; optionA: string; optionB: string; optionC: string; optionD: string; correctAnswer: string; explanation: string }>;
       try {
         mcqs = JSON.parse(cleanJSON(mcqResponse));
         if (!Array.isArray(mcqs)) mcqs = [];
       } catch {
         mcqs = [];
       }
-
-      // Delete existing AI content if reprocessing
-      if (note.aiSummary) {
-        await db.aISummary.delete({ where: { noteId } });
-      }
-      await db.flashcard.deleteMany({ where: { noteId } });
-      await db.mCQ.deleteMany({ where: { noteId } });
-
-      // Store AI Summary
-      await db.aISummary.create({
-        data: {
-          noteId,
-          summary: summaryData.summary || null,
-          keywords: summaryData.keywords || null,
-          concepts: summaryData.concepts || null,
-          learningObjectives: summaryData.learningObjectives || null,
-          importantQuestions: summaryData.importantQuestions || null,
-        },
-      });
-
-      // Store Flashcards
-      if (flashcards.length > 0) {
-        await db.flashcard.createMany({
-          data: flashcards.map((fc, index) => ({
-            noteId,
-            question: fc.question || '',
-            answer: fc.answer || '',
-            order: index,
-          })),
-        });
-      }
-
-      // Store MCQs
-      if (mcqs.length > 0) {
-        await db.mCQ.createMany({
-          data: mcqs.map((mcq, index) => ({
-            noteId,
-            question: mcq.question || '',
-            optionA: mcq.optionA || '',
-            optionB: mcq.optionB || '',
-            optionC: mcq.optionC || '',
-            optionD: mcq.optionD || '',
-            correctAnswer: mcq.correctAnswer || 'A',
-            explanation: mcq.explanation || null,
-            order: index,
-          })),
-        });
-      }
-
-      // Update note status to active
-      await db.note.update({
-        where: { id: noteId },
-        data: { status: 'active' },
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: 'AI processing completed',
-        aiSummary: {
-          summary: summaryData.summary,
-          keywords: summaryData.keywords?.split(',').filter(Boolean) || [],
-          concepts: summaryData.concepts?.split(',').filter(Boolean) || [],
-          learningObjectives: summaryData.learningObjectives?.split(',').filter(Boolean) || [],
-          importantQuestions: summaryData.importantQuestions?.split(',').filter(Boolean) || [],
-        },
-        flashcardsCount: flashcards.length,
-        mcqsCount: mcqs.length,
-      });
-    } catch (aiError) {
-      // Revert note status on AI failure
-      await db.note.update({
-        where: { id: noteId },
-        data: { status: 'active' },
-      });
-      throw aiError;
+    } catch (err) {
+      console.error('AI MCQ generation failed:', err);
     }
+
+    // Save whatever results we got (partial or complete) in a transaction
+    try {
+      await db.$transaction(async (tx) => {
+        // Delete existing AI content if reprocessing
+        if (note.aiSummary) {
+          await tx.aISummary.delete({ where: { noteId } });
+        }
+        await tx.flashcard.deleteMany({ where: { noteId } });
+        await tx.mCQ.deleteMany({ where: { noteId } });
+
+        // Store AI Summary (if we got one)
+        if (summaryData) {
+          await tx.aISummary.create({
+            data: {
+              noteId,
+              summary: summaryData.summary || null,
+              keywords: summaryData.keywords || null,
+              concepts: summaryData.concepts || null,
+              learningObjectives: summaryData.learningObjectives || null,
+              importantQuestions: summaryData.importantQuestions || null,
+            },
+          });
+        }
+
+        // Store Flashcards
+        if (flashcards.length > 0) {
+          await tx.flashcard.createMany({
+            data: flashcards.map((fc, index) => ({
+              noteId,
+              question: fc.question || '',
+              answer: fc.answer || '',
+              order: index,
+            })),
+          });
+        }
+
+        // Store MCQs
+        if (mcqs.length > 0) {
+          await tx.mCQ.createMany({
+            data: mcqs.map((mcq, index) => ({
+              noteId,
+              question: mcq.question || '',
+              optionA: mcq.optionA || '',
+              optionB: mcq.optionB || '',
+              optionC: mcq.optionC || '',
+              optionD: mcq.optionD || '',
+              correctAnswer: mcq.correctAnswer || 'A',
+              explanation: mcq.explanation || null,
+              order: index,
+            })),
+          });
+        }
+
+        // Always set status back to active (even for partial results)
+        await tx.note.update({
+          where: { id: noteId },
+          data: { status: 'active' },
+        });
+      });
+    } catch (dbError) {
+      // If the DB transaction fails, the note is stuck in 'processing' — revert
+      console.error('AI results DB save failed:', dbError);
+      try {
+        await db.note.update({
+          where: { id: noteId },
+          data: { status: 'active' },
+        });
+      } catch {
+        // Last resort — note might stay in 'processing', but at least we tried
+      }
+      return NextResponse.json(
+        { success: false, error: 'Failed to save AI processing results' },
+        { status: 500 }
+      );
+    }
+
+    // Check if we got any results at all
+    const hasAnyResults = summaryData || flashcards.length > 0 || mcqs.length > 0;
+    if (!hasAnyResults) {
+      return NextResponse.json({
+        success: false,
+        error: 'AI processing failed to generate any results. Please try again later.',
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'AI processing completed',
+      aiSummary: summaryData ? {
+        summary: summaryData.summary,
+        keywords: summaryData.keywords?.split(',').filter(Boolean) || [],
+        concepts: summaryData.concepts?.split(',').filter(Boolean) || [],
+        learningObjectives: summaryData.learningObjectives?.split(',').filter(Boolean) || [],
+        importantQuestions: summaryData.importantQuestions?.split(',').filter(Boolean) || [],
+      } : null,
+      flashcardsCount: flashcards.length,
+      mcqsCount: mcqs.length,
+    });
   } catch (error) {
     console.error('AI processing error:', error);
     return NextResponse.json({ success: false, error: 'Failed to process note with AI' }, { status: 500 });

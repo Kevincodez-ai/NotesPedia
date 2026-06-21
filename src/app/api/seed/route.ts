@@ -5,10 +5,10 @@ import { hashPassword, getAuthUser, hasRole } from '@/lib/auth';
 // POST - Seed database with sample data
 export async function POST(request: NextRequest) {
   try {
-    // Production guard — disable seeding when ALLOW_SEED is explicitly 'false'
-    if (process.env.ALLOW_SEED === 'false') {
+    // Production guard — deny by default, only allow when ALLOW_SEED is explicitly 'true'
+    if (process.env.ALLOW_SEED !== 'true') {
       return NextResponse.json(
-        { success: false, error: 'Seeding is disabled in this environment.' },
+        { success: false, error: 'Seeding is disabled. Set ALLOW_SEED=true in .env to enable.' },
         { status: 403 },
       );
     }

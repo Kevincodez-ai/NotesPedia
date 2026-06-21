@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter';
 
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser();
+
+    // Rate limit search queries (expensive DB operation)
+    const clientId = getClientIdentifier(request, user?.id);
+    const { allowed } = rateLimiter.check(`search:${clientId}`, RateLimits.search.limit, RateLimits.search.windowMs);
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Search limit reached. Please try again later.' },
+        { status: 429 }
+      );
+    }
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q') || '';

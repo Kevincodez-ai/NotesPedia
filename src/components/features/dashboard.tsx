@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion } from 'framer-motion';
 import {
@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Clock,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -176,26 +177,44 @@ function EmptyState({ icon: Icon, title, description, action }: { icon: React.El
   );
 }
 
+// ── Error State with Retry ──────────────────────────────────────
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
+        <FileText className="size-8 text-destructive" />
+      </div>
+      <h3 className="font-semibold text-sm">Something went wrong</h3>
+      <p className="text-xs text-muted-foreground mt-1 max-w-xs">{message}</p>
+      <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={onRetry}>
+        <RefreshCw className="size-3.5" /> Try Again
+      </Button>
+    </motion.div>
+  );
+}
+
 // ── Main Dashboard ──────────────────────────────────────────────
 export function DashboardPage() {
   const { user, navigate } = useAppStore();
+  const queryClient = useQueryClient();
 
   // Fetch trending notes
-  const { data: trendingData, isLoading: trendingLoading } = useQuery({
+  const { data: trendingData, isLoading: trendingLoading, isError: trendingError } = useQuery({
     queryKey: ['notes', 'trending'],
     queryFn: () => fetchNotes('sortBy=downloads&limit=6'),
   });
 
   // Fetch recent notes
-  const { data: recentData, isLoading: recentLoading } = useQuery({
+  const { data: recentData, isLoading: recentLoading, isError: recentError } = useQuery({
     queryKey: ['notes', 'recent'],
     queryFn: () => fetchNotes('sortBy=date&limit=6'),
   });
 
-  // Fetch user's uploaded notes
+  // Fetch user's uploaded notes — only when user is authenticated
   const { data: myNotesData } = useQuery({
-    queryKey: ['notes', 'my-uploads'],
-    queryFn: () => fetchNotes(`uploaderId=${user?.id || ''}&limit=100`),
+    queryKey: ['notes', 'my-uploads', user?.id],
+    queryFn: () => fetchNotes(`uploaderId=${user!.id}&limit=100`),
+    enabled: !!user?.id,
   });
 
   // Fetch user's profile for reputationScore
@@ -228,6 +247,9 @@ export function DashboardPage() {
 
   // Use reputation from user profile API response
   const reputationScore = profileData?.profile?.reputationScore ?? 0;
+
+  const retryTrending = () => queryClient.invalidateQueries({ queryKey: ['notes', 'trending'] });
+  const retryRecent = () => queryClient.invalidateQueries({ queryKey: ['notes', 'recent'] });
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
@@ -293,6 +315,8 @@ export function DashboardPage() {
 
         {trendingLoading ? (
           <NoteGridSkeleton />
+        ) : trendingError ? (
+          <ErrorState message="Failed to load trending notes" onRetry={retryTrending} />
         ) : trendingNotes.length === 0 ? (
           <EmptyState
             icon={TrendingUp}
@@ -334,6 +358,8 @@ export function DashboardPage() {
 
         {recentLoading ? (
           <NoteGridSkeleton />
+        ) : recentError ? (
+          <ErrorState message="Failed to load recent notes" onRetry={retryRecent} />
         ) : recentNotes.length === 0 ? (
           <EmptyState
             icon={Clock}

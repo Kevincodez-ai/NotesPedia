@@ -37,57 +37,66 @@ export async function POST(request: NextRequest) {
     });
     const isNewRating = !existingRating;
 
-    // Upsert rating
-    const rating = await db.rating.upsert({
-      where: { noteId_userId: { noteId, userId: user.id } },
-      update: { value: ratingValue },
-      create: { noteId, userId: user.id, value: ratingValue },
-    });
+    // Use a transaction to prevent race conditions on rating recalculation
+    const { rating, avgRating, ratingCount } = await db.$transaction(async (tx) => {
+      // Upsert rating
+      const r = await tx.rating.upsert({
+        where: { noteId_userId: { noteId, userId: user.id } },
+        update: { value: ratingValue },
+        create: { noteId, userId: user.id, value: ratingValue },
+      });
 
-    // Recalculate average rating and count
-    const ratingStats = await db.rating.aggregate({
-      where: { noteId },
-      _avg: { value: true },
-      _count: { value: true },
-    });
+      // Recalculate average rating and count inside transaction
+      const stats = await tx.rating.aggregate({
+        where: { noteId },
+        _avg: { value: true },
+        _count: { value: true },
+      });
 
-    await db.note.update({
-      where: { id: noteId },
-      data: {
-        avgRating: ratingStats._avg.value || 0,
-        ratingCount: ratingStats._count.value,
-      },
-    });
+      await tx.note.update({
+        where: { id: noteId },
+        data: {
+          avgRating: stats._avg.value || 0,
+          ratingCount: stats._count.value,
+        },
+      });
 
-    // Award reputation to note uploader only on NEW ratings (safe — profile may not exist)
-    if (isNewRating) {
-      try {
-        await db.profile.update({
-          where: { userId: note.uploaderId },
-          data: { reputationScore: { increment: 2 } },
+      // Award reputation to note uploader only on NEW ratings
+      if (isNewRating) {
+        try {
+          await tx.profile.update({
+            where: { userId: note.uploaderId },
+            data: { reputationScore: { increment: 2 } },
+          });
+        } catch { /* profile may not exist */ }
+
+        await tx.reputationLog.create({
+          data: {
+            userId: note.uploaderId,
+            action: 'rating_received',
+            points: 2,
+            noteId,
+          },
         });
-      } catch { /* profile may not exist */ }
 
-      await db.reputationLog.create({
-        data: {
-          userId: note.uploaderId,
-          action: 'rating_received',
-          points: 2,
-          noteId,
-        },
-      });
+        // Create notification for uploader
+        await tx.notification.create({
+          data: {
+            userId: note.uploaderId,
+            type: 'rating',
+            title: 'New Rating',
+            message: `${user.name} rated your note "${note.title}" ${ratingValue} star${ratingValue > 1 ? 's' : ''}`,
+            link: `/notes/${noteId}`,
+          },
+        });
+      }
 
-      // Create notification for uploader
-      await db.notification.create({
-        data: {
-          userId: note.uploaderId,
-          type: 'rating',
-          title: 'New Rating',
-          message: `${user.name} rated your note "${note.title}" ${ratingValue} star${ratingValue > 1 ? 's' : ''}`,
-          link: `/notes/${noteId}`,
-        },
-      });
-    }
+      return {
+        rating: r,
+        avgRating: stats._avg.value || 0,
+        ratingCount: stats._count.value,
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -97,8 +106,8 @@ export async function POST(request: NextRequest) {
         userId: rating.userId,
         value: rating.value,
       },
-      avgRating: ratingStats._avg.value || 0,
-      ratingCount: ratingStats._count.value,
+      avgRating,
+      ratingCount,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

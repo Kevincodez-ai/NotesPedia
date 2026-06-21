@@ -191,6 +191,13 @@ export async function PUT(request: NextRequest) {
 
     // Handle password change
     if (body.action === 'changePassword' || (body.currentPassword && body.newPassword)) {
+      // Rate limit password change attempts
+      const clientId = getClientIdentifier(request, user.id);
+      const { allowed } = rateLimiter.check(`password-change:${clientId}`, RateLimits.passwordReset.limit, RateLimits.passwordReset.windowMs);
+      if (!allowed) {
+        return NextResponse.json({ success: false, error: 'Too many password change attempts. Please try again later.' }, { status: 429 });
+      }
+
       const { currentPassword, newPassword } = body;
       if (!currentPassword || !newPassword) {
         return NextResponse.json({ success: false, error: 'Current password and new password are required' }, { status: 400 });
@@ -289,33 +296,37 @@ export async function DELETE() {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Anonymize and deactivate the user account (GDPR-safe)
-    await db.user.update({
-      where: { id: user.id },
-      data: {
-        isActive: false,
-        name: 'Deleted User',
-        email: `deleted_${user.id.slice(0, 8)}@deleted.local`,
-        avatarUrl: null,
-        bio: null,
-        passwordHash: null,
-        emailVerificationToken: null,
-        emailVerificationExpires: null,
-      },
-    });
-
-    // Clear profile personal data
-    try {
-      await db.profile.update({
-        where: { userId: user.id },
+    // Anonymize and deactivate the user account atomically (GDPR-safe)
+    await db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
         data: {
-          collegeId: null,
-          departmentId: null,
-          semester: null,
-          year: null,
+          isActive: false,
+          name: 'Deleted User',
+          email: `deleted_${user.id.slice(0, 8)}@deleted.local`,
+          avatarUrl: null,
+          bio: null,
+          passwordHash: null,
+          emailVerificationToken: null,
+          emailVerificationExpires: null,
         },
       });
-    } catch { /* profile may not exist */ }
+
+      // Clear profile personal data
+      try {
+        await tx.profile.update({
+          where: { userId: user.id },
+          data: {
+            collegeId: null,
+            departmentId: null,
+            semester: null,
+            year: null,
+          },
+        });
+      } catch {
+        // Profile may not exist — that's fine
+      }
+    });
 
     // Remove auth cookie
     await removeAuthCookie();

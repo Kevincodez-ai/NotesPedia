@@ -17,6 +17,7 @@ export function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSent, setIsSent] = useState(false);
   const [resetUrl, setResetUrl] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [emailSent, setEmailSent] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -50,6 +51,9 @@ export function ForgotPasswordPage() {
         setEmailSent(!!data.emailSent);
         if (data.resetUrl) {
           setResetUrl(data.resetUrl);
+        }
+        if (data.resetToken) {
+          setResetToken(data.resetToken);
         }
       } else {
         setError(data.error || 'Failed to generate reset link. Please try again.');
@@ -91,12 +95,30 @@ export function ForgotPasswordPage() {
   };
 
   const handleResetNow = () => {
-    // Extract token from URL and navigate to reset-password page
-    const url = new URL(resetUrl);
-    const token = url.searchParams.get('token');
-    if (token) {
-      navigate('reset-password', { id: token });
+    // Use resetToken directly if available (more reliable than parsing URL)
+    if (resetToken) {
+      navigate('reset-password', { id: resetToken });
+      return;
     }
+    // Fallback: try to extract token from resetUrl
+    if (resetUrl) {
+      try {
+        const url = new URL(resetUrl);
+        const token = url.searchParams.get('token');
+        if (token) {
+          navigate('reset-password', { id: token });
+          return;
+        }
+      } catch {
+        // resetUrl might be relative or malformed — try regex fallback
+        const tokenMatch = resetUrl.match(/[?&]token=([^&]+)/);
+        if (tokenMatch?.[1]) {
+          navigate('reset-password', { id: tokenMatch[1] });
+          return;
+        }
+      }
+    }
+    toast.error('Reset token not found. Please try again.');
   };
 
   return (

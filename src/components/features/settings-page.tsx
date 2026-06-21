@@ -64,7 +64,7 @@ import { useTheme } from 'next-themes';
 
 // ── Fetchers ────────────────────────────────────────────────────
 async function fetchUserProfile() {
-  const res = await fetch('/api/auth');
+  const res = await fetch('/api/users/me');
   if (!res.ok) throw new Error('Failed to fetch profile');
   return res.json();
 }
@@ -132,11 +132,6 @@ function ProfileTab() {
     queryFn: fetchColleges,
   });
 
-  const { data: subjectsData } = useQuery({
-    queryKey: ['settings-subjects'],
-    queryFn: fetchSubjects,
-  });
-
   // Fetch full profile to get bio, college, etc.
   const { data: profileData } = useQuery({
     queryKey: ['user-profile-settings'],
@@ -165,7 +160,7 @@ function ProfileTab() {
 
   const setName = (v: string) => { setNameState(v); markEdited('name'); };
   const setBio = (v: string) => { setBioState(v); markEdited('bio'); };
-  const setCollegeId = (v: string) => { setCollegeIdState(v); markEdited('collegeId'); };
+  const setCollegeId = (v: string) => { setCollegeIdState(v); markEdited('collegeId'); setDepartmentIdState(''); markEdited('departmentId'); };
   const setDepartmentId = (v: string) => { setDepartmentIdState(v); markEdited('departmentId'); };
   const setSemester = (v: string) => { setSemesterState(v); markEdited('semester'); };
   const setAvatarUrl = (v: string) => { setAvatarUrlState(v); markEdited('avatarUrl'); };
@@ -174,8 +169,19 @@ function ProfileTab() {
     mutationFn: (data: Record<string, unknown>) => updateProfile(data),
     onSuccess: (data) => {
       if (data.user) {
-        setUser(data.user);
+        // Map the API response to AuthUser type (flat structure without nested profile)
+        const apiUser = data.user;
+        setUser({
+          id: apiUser.id,
+          email: apiUser.email,
+          name: apiUser.name,
+          avatarUrl: apiUser.avatarUrl,
+          role: apiUser.role,
+          emailVerified: apiUser.emailVerified,
+        });
       }
+      // Clear the edited set so form picks up new server data
+      setEdited(new Set());
       queryClient.invalidateQueries({ queryKey: ['user-profile-settings'] });
       toast.success('Profile updated successfully');
     },
@@ -190,15 +196,15 @@ function ProfileTab() {
     updateMutation.mutate({
       name: name.trim(),
       bio: bio.trim() || null,
-      collegeId: collegeId || null,
-      departmentId: departmentId || null,
-      semester: semester ? parseInt(semester) : null,
+      collegeId: collegeId && collegeId !== 'none' ? collegeId : null,
+      departmentId: departmentId && departmentId !== 'none' ? departmentId : null,
+      semester: semester && semester !== 'none' ? parseInt(semester) : null,
       avatarUrl: avatarUrl.trim() || null,
     });
   };
 
   const colleges = collegesData?.colleges ?? [];
-  const departments = subjectsData?.subjects ?? [];
+  const departments = colleges.find((c: { id: string }) => c.id === collegeId)?.departments ?? [];
 
   return (
     <div className="space-y-6">

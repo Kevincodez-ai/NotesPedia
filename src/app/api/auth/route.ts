@@ -162,10 +162,22 @@ export async function GET() {
 const updateProfileSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').optional(),
   bio: z.string().max(500, 'Bio must be at most 500 characters').nullable().optional(),
-  avatarUrl: z.string().url('Invalid avatar URL').nullable().optional(),
-  collegeId: z.string().nullable().optional(),
-  departmentId: z.string().nullable().optional(),
-  semester: z.number().int().min(1).max(12).nullable().optional(),
+  avatarUrl: z.preprocess(
+    (val) => (val === '' || val === null ? null : val),
+    z.string().url('Invalid avatar URL').nullable().optional()
+  ),
+  collegeId: z.preprocess(
+    (val) => (val === '' || val === 'none' || val === null ? null : val),
+    z.string().nullable().optional()
+  ),
+  departmentId: z.preprocess(
+    (val) => (val === '' || val === 'none' || val === null ? null : val),
+    z.string().nullable().optional()
+  ),
+  semester: z.preprocess(
+    (val) => (val === '' || val === 'none' || val === null || val === undefined ? null : (typeof val === 'string' ? parseInt(val) : val)),
+    z.number().int().min(1).max(12).nullable().optional()
+  ),
 });
 
 export async function PUT(request: NextRequest) {
@@ -223,8 +235,8 @@ export async function PUT(request: NextRequest) {
 
     // Update Profile table fields
     const profileUpdateData: { collegeId?: string | null; departmentId?: string | null; semester?: number | null } = {};
-    if (data.collegeId !== undefined) profileUpdateData.collegeId = data.collegeId || null;
-    if (data.departmentId !== undefined) profileUpdateData.departmentId = data.departmentId || null;
+    if (data.collegeId !== undefined) profileUpdateData.collegeId = data.collegeId;
+    if (data.departmentId !== undefined) profileUpdateData.departmentId = data.departmentId;
     if (data.semester !== undefined) profileUpdateData.semester = data.semester;
 
     if (Object.keys(profileUpdateData).length > 0) {

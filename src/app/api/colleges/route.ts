@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       db.college.findMany({
         where,
         include: {
+          departments: { select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } },
           _count: { select: { departments: true, subjects: true, notes: true, profiles: true } },
         },
         orderBy: { name: 'asc' },
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
       website: c.website,
       logoUrl: c.logoUrl,
       isVerified: c.isVerified,
+      departments: c.departments,
       departmentCount: c._count.departments,
       subjectCount: c._count.subjects,
       noteCount: c._count.notes,

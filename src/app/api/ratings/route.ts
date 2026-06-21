@@ -59,12 +59,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Award reputation to note uploader only on NEW ratings
+    // Award reputation to note uploader only on NEW ratings (safe — profile may not exist)
     if (isNewRating) {
-      await db.profile.update({
-        where: { userId: note.uploaderId },
-        data: { reputationScore: { increment: 2 } },
-      });
+      try {
+        await db.profile.update({
+          where: { userId: note.uploaderId },
+          data: { reputationScore: { increment: 2 } },
+        });
+      } catch { /* profile may not exist */ }
 
       await db.reputationLog.create({
         data: {

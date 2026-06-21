@@ -61,16 +61,12 @@ export async function POST(request: NextRequest) {
       // Unfollow
       await db.follow.delete({ where: { id: existing.id } });
 
-      // Update counters
+      // Update counters (wrapped in try/catch — profile may not exist yet)
       if (type === 'user' && followingId) {
-        await db.profile.update({
-          where: { userId: followingId },
-          data: { followerCount: { decrement: 1 } },
-        });
-        await db.profile.update({
-          where: { userId: user.id },
-          data: { followingCount: { decrement: 1 } },
-        });
+        try {
+          await db.profile.update({ where: { userId: followingId }, data: { followerCount: { decrement: 1 } } });
+          await db.profile.update({ where: { userId: user.id }, data: { followingCount: { decrement: 1 } } });
+        } catch { /* profile may not exist yet */ }
       } else if (type === 'subject') {
         await db.subject.update({
           where: { id: subjectId! },
@@ -91,16 +87,12 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Update counters
+      // Update counters (wrapped in try/catch — profile may not exist yet)
       if (type === 'user' && followingId) {
-        await db.profile.update({
-          where: { userId: followingId },
-          data: { followerCount: { increment: 1 } },
-        });
-        await db.profile.update({
-          where: { userId: user.id },
-          data: { followingCount: { increment: 1 } },
-        });
+        try {
+          await db.profile.update({ where: { userId: followingId }, data: { followerCount: { increment: 1 } } });
+          await db.profile.update({ where: { userId: user.id }, data: { followingCount: { increment: 1 } } });
+        } catch { /* profile may not exist yet */ }
 
         // Notify the followed user
         await db.notification.create({

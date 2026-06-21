@@ -245,6 +245,16 @@ export function UploadPage() {
         } catch {
           throw new Error(`Failed to create note (HTTP ${noteRes.status})`);
         }
+        // Note creation failed — try to clean up the orphaned uploaded file
+        if (uploadData.filePath) {
+          try {
+            await fetch('/api/upload', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filePath: uploadData.filePath }),
+            });
+          } catch { /* cleanup failed, that's okay */ }
+        }
         throw new Error(errData.error || 'Failed to create note');
       }
 

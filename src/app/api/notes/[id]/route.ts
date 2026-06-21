@@ -142,14 +142,16 @@ export async function DELETE(
       data: { status: 'removed' },
     });
 
-    // Decrement uploader's uploadCount and contributionScore
-    await db.profile.update({
-      where: { userId: note.uploaderId },
-      data: {
-        uploadCount: { decrement: 1 },
-        contributionScore: { decrement: 10 },
-      },
-    });
+    // Decrement uploader's uploadCount and contributionScore (safe — profile may not exist)
+    try {
+      await db.profile.update({
+        where: { userId: note.uploaderId },
+        data: {
+          uploadCount: { decrement: 1 },
+          contributionScore: { decrement: 10 },
+        },
+      });
+    } catch { /* profile may not exist */ }
 
     return NextResponse.json({ success: true, message: 'Note deleted successfully' });
   } catch (error) {

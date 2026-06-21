@@ -166,13 +166,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Update user profile
-    await db.profile.update({
+    // Update user profile (upsert in case profile doesn't exist)
+    await db.profile.upsert({
       where: { userId: user.id },
-      data: {
+      update: {
         uploadCount: { increment: 1 },
         contributionScore: { increment: 10 },
         reputationScore: { increment: 5 },
+      },
+      create: {
+        userId: user.id,
+        uploadCount: 1,
+        contributionScore: 10,
+        reputationScore: 5,
       },
     });
 

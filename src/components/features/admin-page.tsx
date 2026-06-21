@@ -643,10 +643,10 @@ function UsersTab() {
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => handleSuspendUser(u.id, u.name)}
-                            disabled={adminActionMutation.isPending}
+                            disabled={adminActionMutation.isPending || u.id === user?.id}
                           >
                             <Ban className="size-3.5 mr-2" />
-                            Suspend User
+                            {u.id === user?.id ? 'Cannot Suspend Self' : 'Suspend User'}
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem

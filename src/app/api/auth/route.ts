@@ -5,7 +5,7 @@ import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter
 import { z } from 'zod';
 
 const signupSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name must be at most 100 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
@@ -233,16 +233,20 @@ export async function PUT(request: NextRequest) {
       });
     }
 
-    // Update Profile table fields
+    // Update Profile table fields — use upsert in case profile doesn't exist yet
     const profileUpdateData: { collegeId?: string | null; departmentId?: string | null; semester?: number | null } = {};
     if (data.collegeId !== undefined) profileUpdateData.collegeId = data.collegeId;
     if (data.departmentId !== undefined) profileUpdateData.departmentId = data.departmentId;
     if (data.semester !== undefined) profileUpdateData.semester = data.semester;
 
     if (Object.keys(profileUpdateData).length > 0) {
-      await db.profile.update({
+      await db.profile.upsert({
         where: { userId: user.id },
-        data: profileUpdateData,
+        update: profileUpdateData,
+        create: {
+          userId: user.id,
+          ...profileUpdateData,
+        },
       });
     }
 
@@ -285,16 +289,38 @@ export async function DELETE() {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Deactivate the user account
+    // Anonymize and deactivate the user account (GDPR-safe)
     await db.user.update({
       where: { id: user.id },
-      data: { isActive: false },
+      data: {
+        isActive: false,
+        name: 'Deleted User',
+        email: `deleted_${user.id.slice(0, 8)}@deleted.local`,
+        avatarUrl: null,
+        bio: null,
+        passwordHash: null,
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
+      },
     });
+
+    // Clear profile personal data
+    try {
+      await db.profile.update({
+        where: { userId: user.id },
+        data: {
+          collegeId: null,
+          departmentId: null,
+          semester: null,
+          year: null,
+        },
+      });
+    } catch { /* profile may not exist */ }
 
     // Remove auth cookie
     await removeAuthCookie();
 
-    return NextResponse.json({ success: true, message: 'Account deactivated successfully' });
+    return NextResponse.json({ success: true, message: 'Account deleted successfully' });
   } catch (error) {
     console.error('Account deactivation error:', error);
     return NextResponse.json({ success: false, error: 'Failed to deactivate account' }, { status: 500 });

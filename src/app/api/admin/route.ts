@@ -418,6 +418,11 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
         }
 
+        // Prevent admin from suspending themselves
+        if (data.isActive === false && data.id === user.id) {
+          return NextResponse.json({ success: false, error: 'You cannot suspend your own account' }, { status: 403 });
+        }
+
         // Only super_admin can change roles to admin/super_admin
         if ((data.role === 'admin' || data.role === 'super_admin') && user.role !== 'super_admin') {
           return NextResponse.json({ success: false, error: 'Only super admins can assign admin roles' }, { status: 403 });
@@ -426,6 +431,21 @@ export async function POST(request: NextRequest) {
         // Prevent admins from modifying their own role
         if (data.role !== undefined && data.id === user.id && user.role !== 'super_admin') {
           return NextResponse.json({ success: false, error: 'Cannot modify your own role' }, { status: 403 });
+        }
+
+        // Prevent demoting/suspending the last admin
+        if ((data.role !== undefined && data.role !== 'admin' && data.role !== 'super_admin') || data.isActive === false) {
+          if (targetUser.role === 'admin' || targetUser.role === 'super_admin') {
+            const activeAdminCount = await db.user.count({
+              where: {
+                role: { in: ['admin', 'super_admin'] },
+                isActive: true,
+              },
+            });
+            if (activeAdminCount <= 1) {
+              return NextResponse.json({ success: false, error: 'Cannot demote or suspend the last admin account' }, { status: 403 });
+            }
+          }
         }
 
         const updateData: Record<string, unknown> = {};
@@ -491,9 +511,14 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
         }
 
+        // Prevent featuring already-featured notes (qualityScore >= 50 is considered featured)
+        if (note.qualityScore >= 50) {
+          return NextResponse.json({ success: false, error: 'This note is already featured' }, { status: 400 });
+        }
+
         await db.note.update({
           where: { id: data.id },
-          data: { qualityScore: { increment: 10 } },
+          data: { qualityScore: 50 }, // Set to featured threshold instead of incrementing
         });
 
         await logAdminAction(user.id, data.id, 'note', 'featureNote', `Featured note: ${note.title}`);

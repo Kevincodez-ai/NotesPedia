@@ -32,6 +32,10 @@ interface AppState {
 
 const AUTH_SIGNAL_KEY = 'notespedia_auth_signal';
 
+// Track whether the last auth change was from a local action (login/logout in this tab)
+// vs an external event (token expiry, cross-tab, etc.)
+let lastAuthActionWasLocal = false;
+
 export const useAppStore = create<AppState>((set) => ({
   // Navigation
   currentPage: 'landing',
@@ -54,6 +58,9 @@ export const useAppStore = create<AppState>((set) => ({
     } catch {
       // localStorage not available
     }
+    // Track that this was a local action (not cross-tab)
+    lastAuthActionWasLocal = true;
+    setTimeout(() => { lastAuthActionWasLocal = false; }, 1000);
   },
   setLoading: (isLoading) => set({ isLoading }),
 
@@ -76,8 +83,11 @@ export const useAppStore = create<AppState>((set) => ({
 /**
  * Re-validate auth by reading the cookie via /api/auth.
  * Used when tab regains focus or when another tab signals an auth change.
+ * Shows a toast if the user was unexpectedly logged out (session expired).
  */
 export async function revalidateAuth() {
+  const wasAuthenticated = useAppStore.getState().isAuthenticated;
+  const wasLocal = lastAuthActionWasLocal;
   try {
     const res = await fetch('/api/auth');
     const data = await res.json();
@@ -85,6 +95,14 @@ export async function revalidateAuth() {
       useAppStore.getState().setUser(data.user);
     } else {
       useAppStore.getState().setUser(null);
+      // Show "Session expired" toast only if:
+      // 1. User was previously authenticated, AND
+      // 2. This was NOT triggered by a local logout action
+      if (wasAuthenticated && !wasLocal) {
+        import('sonner').then(({ toast }) => {
+          toast.error('Session expired. Please log in again.', { duration: 5000 });
+        });
+      }
     }
   } catch {
     useAppStore.getState().setUser(null);

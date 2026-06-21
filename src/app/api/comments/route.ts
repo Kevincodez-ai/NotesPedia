@@ -239,11 +239,13 @@ export async function POST(request: NextRequest) {
       data: { commentCount: { increment: 1 } },
     });
 
-    // Award reputation for commenting
-    await db.profile.update({
-      where: { userId: user.id },
-      data: { contributionScore: { increment: 2 } },
-    });
+    // Award reputation for commenting (safe — profile may not exist yet)
+    try {
+      await db.profile.update({
+        where: { userId: user.id },
+        data: { contributionScore: { increment: 2 } },
+      });
+    } catch { /* profile may not exist */ }
 
     await db.reputationLog.create({
       data: {

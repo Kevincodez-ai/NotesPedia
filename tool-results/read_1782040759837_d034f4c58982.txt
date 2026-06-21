@@ -1,0 +1,938 @@
+     1→'use client';
+     2→
+     3→import React, { useState } from 'react';
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/store/app-store';
+     6→import { motion } from 'framer-motion';
+     7→import {
+     8→  Settings,
+     9→  User,
+    10→  Lock,
+    11→  Bell,
+    12→  Palette,
+    13→  Camera,
+    14→  Save,
+    15→  Trash2,
+    16→  Eye,
+    17→  EyeOff,
+    18→  Shield,
+    19→  Sun,
+    20→  Moon,
+    21→  Monitor,
+    22→  ChevronRight,
+    23→  AlertTriangle,
+    24→} from 'lucide-react';
+    25→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+    26→import { Button } from '@/components/ui/button';
+    27→import { Badge } from '@/components/ui/badge';
+    28→import { Skeleton } from '@/components/ui/skeleton';
+    29→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    30→import { Input } from '@/components/ui/input';
+    31→import { Textarea } from '@/components/ui/textarea';
+    32→import { Label } from '@/components/ui/label';
+    33→import { Switch } from '@/components/ui/switch';
+    34→import { Separator } from '@/components/ui/separator';
+    35→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    36→import {
+    37→  Select,
+    38→  SelectContent,
+    39→  SelectItem,
+    40→  SelectTrigger,
+    41→  SelectValue,
+    42→} from '@/components/ui/select';
+    43→import {
+    44→  Dialog,
+    45→  DialogContent,
+    46→  DialogDescription,
+    47→  DialogFooter,
+    48→  DialogHeader,
+    49→  DialogTitle,
+    50→} from '@/components/ui/dialog';
+    51→import {
+    52→  AlertDialog,
+    53→  AlertDialogAction,
+    54→  AlertDialogCancel,
+    55→  AlertDialogContent,
+    56→  AlertDialogDescription,
+    57→  AlertDialogFooter,
+    58→  AlertDialogHeader,
+    59→  AlertDialogTitle,
+    60→  AlertDialogTrigger,
+    61→} from '@/components/ui/alert-dialog';
+    62→import { toast } from 'sonner';
+    63→import { useTheme } from 'next-themes';
+    64→
+    65→// ── Fetchers ────────────────────────────────────────────────────
+    66→async function fetchUserProfile() {
+    67→  const res = await fetch('/api/users/me');
+    68→  if (!res.ok) throw new Error('Failed to fetch profile');
+    69→  return res.json();
+    70→}
+    71→
+    72→async function updateProfile(data: Record<string, unknown>) {
+    73→  const res = await fetch('/api/auth', {
+    74→    method: 'PUT',
+    75→    headers: { 'Content-Type': 'application/json' },
+    76→    body: JSON.stringify(data),
+    77→  });
+    78→  if (!res.ok) {
+    79→    const err = await res.json().catch(() => ({}));
+    80→    throw new Error(err.error || 'Failed to update profile');
+    81→  }
+    82→  return res.json();
+    83→}
+    84→
+    85→async function changePassword(data: { currentPassword: string; newPassword: string }) {
+    86→  const res = await fetch('/api/auth', {
+    87→    method: 'PUT',
+    88→    headers: { 'Content-Type': 'application/json' },
+    89→    body: JSON.stringify({ action: 'changePassword', ...data }),
+    90→  });
+    91→  if (!res.ok) {
+    92→    const err = await res.json().catch(() => ({}));
+    93→    throw new Error(err.error || 'Failed to change password');
+    94→  }
+    95→  return res.json();
+    96→}
+    97→
+    98→async function deleteAccount() {
+    99→  const res = await fetch('/api/auth', {
+   100→    method: 'DELETE',
+   101→  });
+   102→  if (!res.ok) {
+   103→    const err = await res.json().catch(() => ({}));
+   104→    throw new Error(err.error || 'Failed to delete account');
+   105→  }
+   106→  return res.json();
+   107→}
+   108→
+   109→async function fetchColleges() {
+   110→  const res = await fetch('/api/colleges?limit=100');
+   111→  if (!res.ok) throw new Error('Failed');
+   112→  return res.json();
+   113→}
+   114→
+   115→async function fetchSubjects() {
+   116→  const res = await fetch('/api/subjects?limit=100');
+   117→  if (!res.ok) throw new Error('Failed');
+   118→  return res.json();
+   119→}
+   120→
+   121→// ── Profile Settings Tab ────────────────────────────────────────
+   122→function ProfileTab() {
+   123→  const { user, setUser } = useAppStore();
+   124→  const queryClient = useQueryClient();
+   125→
+   126→  // Track which fields the user has manually edited
+   127→  const [edited, setEdited] = useState<Set<string>>(new Set());
+   128→  const markEdited = (field: string) => setEdited((prev) => new Set(prev).add(field));
+   129→
+   130→  const { data: collegesData } = useQuery({
+   131→    queryKey: ['settings-colleges'],
+   132→    queryFn: fetchColleges,
+   133→  });
+   134→
+   135→  // Fetch full profile to get bio, college, etc.
+   136→  const { data: profileData } = useQuery({
+   137→    queryKey: ['user-profile-settings'],
+   138→    queryFn: async () => {
+   139→      const res = await fetch('/api/users/me');
+   140→      if (!res.ok) return null;
+   141→      return res.json();
+   142→    },
+   143→  });
+   144→
+   145→  // Derive form values: use local state if edited, otherwise server data
+   146→  const serverUser = profileData?.user;
+   147→  const [nameState, setNameState] = useState(user?.name || '');
+   148→  const [bioState, setBioState] = useState('');
+   149→  const [collegeIdState, setCollegeIdState] = useState('');
+   150→  const [departmentIdState, setDepartmentIdState] = useState('');
+   151→  const [semesterState, setSemesterState] = useState('');
+   152→  const [avatarUrlState, setAvatarUrlState] = useState(user?.avatarUrl || '');
+   153→
+   154→  const name = edited.has('name') ? nameState : (serverUser?.name || user?.name || nameState);
+   155→  const bio = edited.has('bio') ? bioState : (serverUser?.bio || '');
+   156→  const collegeId = edited.has('collegeId') ? collegeIdState : (serverUser?.collegeId || '');
+   157→  const departmentId = edited.has('departmentId') ? departmentIdState : (serverUser?.departmentId || '');
+   158→  const semester = edited.has('semester') ? semesterState : (serverUser?.semester ? String(serverUser.semester) : '');
+   159→  const avatarUrl = edited.has('avatarUrl') ? avatarUrlState : (serverUser?.avatarUrl || user?.avatarUrl || '');
+   160→
+   161→  const setName = (v: string) => { setNameState(v); markEdited('name'); };
+   162→  const setBio = (v: string) => { setBioState(v); markEdited('bio'); };
+   163→  const setCollegeId = (v: string) => { setCollegeIdState(v); markEdited('collegeId'); setDepartmentIdState(''); markEdited('departmentId'); };
+   164→  const setDepartmentId = (v: string) => { setDepartmentIdState(v); markEdited('departmentId'); };
+   165→  const setSemester = (v: string) => { setSemesterState(v); markEdited('semester'); };
+   166→  const setAvatarUrl = (v: string) => { setAvatarUrlState(v); markEdited('avatarUrl'); };
+   167→
+   168→  const updateMutation = useMutation({
+   169→    mutationFn: (data: Record<string, unknown>) => updateProfile(data),
+   170→    onSuccess: (data) => {
+   171→      if (data.user) {
+   172→        // Map the API response to AuthUser type (flat structure without nested profile)
+   173→        const apiUser = data.user;
+   174→        setUser({
+   175→          id: apiUser.id,
+   176→          email: apiUser.email,
+   177→          name: apiUser.name,
+   178→          avatarUrl: apiUser.avatarUrl,
+   179→          role: apiUser.role,
+   180→          emailVerified: apiUser.emailVerified,
+   181→        });
+   182→      }
+   183→      // Clear the edited set so form picks up new server data
+   184→      setEdited(new Set());
+   185→      queryClient.invalidateQueries({ queryKey: ['user-profile-settings'] });
+   186→      toast.success('Profile updated successfully');
+   187→    },
+   188→    onError: (error) => toast.error(error.message),
+   189→  });
+   190→
+   191→  const handleSave = () => {
+   192→    if (!name.trim()) {
+   193→      toast.error('Name is required');
+   194→      return;
+   195→    }
+   196→    updateMutation.mutate({
+   197→      name: name.trim(),
+   198→      bio: bio.trim() || null,
+   199→      collegeId: collegeId && collegeId !== 'none' ? collegeId : null,
+   200→      departmentId: departmentId && departmentId !== 'none' ? departmentId : null,
+   201→      semester: semester && semester !== 'none' ? parseInt(semester) : null,
+   202→      avatarUrl: avatarUrl.trim() || null,
+   203→    });
+   204→  };
+   205→
+   206→  const colleges = collegesData?.colleges ?? [];
+   207→  const departments = colleges.find((c: { id: string }) => c.id === collegeId)?.departments ?? [];
+   208→
+   209→  return (
+   210→    <div className="space-y-6">
+   211→      {/* Avatar section */}
+   212→      <Card className="border-0 shadow-sm">
+   213→        <CardContent className="p-6">
+   214→          <div className="flex items-center gap-4">
+   215→            <div className="relative group">
+   216→              <Avatar className="size-20 ring-2 ring-emerald-200 dark:ring-emerald-800">
+   217→                {avatarUrl && <AvatarImage src={avatarUrl} />}
+   218→                <AvatarFallback className="text-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+   219→                  {name.charAt(0) || '?'}
+   220→                </AvatarFallback>
+   221→              </Avatar>
+   222→              <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+   223→                <Camera className="size-5 text-white" />
+   224→              </div>
+   225→            </div>
+   226→            <div className="space-y-1">
+   227→              <h3 className="font-semibold">{name || 'Your Name'}</h3>
+   228→              <p className="text-sm text-muted-foreground">{user?.email}</p>
+   229→              <div className="flex items-center gap-2 mt-2">
+   230→                <Input
+   231→                  className="h-8 text-xs"
+   232→                  placeholder="Paste avatar URL..."
+   233→                  value={avatarUrl}
+   234→                  onChange={(e) => setAvatarUrl(e.target.value)}
+   235→                />
+   236→              </div>
+   237→            </div>
+   238→          </div>
+   239→        </CardContent>
+   240→      </Card>
+   241→
+   242→      {/* Profile form */}
+   243→      <Card className="border-0 shadow-sm">
+   244→        <CardHeader className="pb-3">
+   245→          <CardTitle className="text-base flex items-center gap-2">
+   246→            <User className="size-4 text-emerald-600" /> Personal Information
+   247→          </CardTitle>
+   248→          <CardDescription>Update your personal details</CardDescription>
+   249→        </CardHeader>
+   250→        <CardContent className="space-y-4">
+   251→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   252→            <div className="space-y-2">
+   253→              <Label htmlFor="settings-name">Display Name *</Label>
+   254→              <Input
+   255→                id="settings-name"
+   256→                value={name}
+   257→                onChange={(e) => setName(e.target.value)}
+   258→                placeholder="Your full name"
+   259→              />
+   260→            </div>
+   261→            <div className="space-y-2">
+   262→              <Label htmlFor="settings-semester">Semester</Label>
+   263→              <Select value={semester} onValueChange={setSemester}>
+   264→                <SelectTrigger id="settings-semester">
+   265→                  <SelectValue placeholder="Select semester" />
+   266→                </SelectTrigger>
+   267→                <SelectContent>
+   268→                  <SelectItem value="none">Not specified</SelectItem>
+   269→                  {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+   270→                    <SelectItem key={s} value={String(s)}>Semester {s}</SelectItem>
+   271→                  ))}
+   272→                </SelectContent>
+   273→              </Select>
+   274→            </div>
+   275→          </div>
+   276→
+   277→          <div className="space-y-2">
+   278→            <Label htmlFor="settings-bio">Bio</Label>
+   279→            <Textarea
+   280→              id="settings-bio"
+   281→              value={bio}
+   282→              onChange={(e) => setBio(e.target.value)}
+   283→              placeholder="Tell us about yourself..."
+   284→              rows={3}
+   285→              className="resize-none"
+   286→            />
+   287→            <p className="text-[10px] text-muted-foreground">{bio.length}/200 characters</p>
+   288→          </div>
+   289→
+   290→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   291→            <div className="space-y-2">
+   292→              <Label>College</Label>
+   293→              <Select value={collegeId || 'none'} onValueChange={setCollegeId}>
+   294→                <SelectTrigger>
+   295→                  <SelectValue placeholder="Select college" />
+   296→                </SelectTrigger>
+   297→                <SelectContent>
+   298→                  <SelectItem value="none">Not specified</SelectItem>
+   299→                  {colleges.map((c: { id: string; name: string }) => (
+   300→                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+   301→                  ))}
+   302→                </SelectContent>
+   303→              </Select>
+   304→            </div>
+   305→            <div className="space-y-2">
+   306→              <Label>Department</Label>
+   307→              <Select value={departmentId || 'none'} onValueChange={setDepartmentId}>
+   308→                <SelectTrigger>
+   309→                  <SelectValue placeholder="Select department" />
+   310→                </SelectTrigger>
+   311→                <SelectContent>
+   312→                  <SelectItem value="none">Not specified</SelectItem>
+   313→                  {departments.map((d: { id: string; name: string }) => (
+   314→                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+   315→                  ))}
+   316→                </SelectContent>
+   317→              </Select>
+   318→            </div>
+   319→          </div>
+   320→
+   321→          <div className="flex justify-end pt-2">
+   322→            <Button
+   323→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+   324→              onClick={handleSave}
+   325→              disabled={updateMutation.isPending}
+   326→            >
+   327→              <Save className="size-4" />
+   328→              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+   329→            </Button>
+   330→          </div>
+   331→        </CardContent>
+   332→      </Card>
+   333→    </div>
+   334→  );
+   335→}
+   336→
+   337→// ── Account Settings Tab ────────────────────────────────────────
+   338→function AccountTab() {
+   339→  const { user, setUser } = useAppStore();
+   340→  const [currentPassword, setCurrentPassword] = useState('');
+   341→  const [newPassword, setNewPassword] = useState('');
+   342→  const [confirmPassword, setConfirmPassword] = useState('');
+   343→  const [showCurrent, setShowCurrent] = useState(false);
+   344→  const [showNew, setShowNew] = useState(false);
+   345→  const [deleteConfirm, setDeleteConfirm] = useState('');
+   346→  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+   347→  const [emailValue, setEmailValue] = useState(user?.email || '');
+   348→
+   349→  const passwordMutation = useMutation({
+   350→    mutationFn: changePassword,
+   351→    onSuccess: () => {
+   352→      setCurrentPassword('');
+   353→      setNewPassword('');
+   354→      setConfirmPassword('');
+   355→      toast.success('Password changed successfully');
+   356→    },
+   357→    onError: (error) => toast.error(error.message),
+   358→  });
+   359→
+   360→  const emailMutation = useMutation({
+   361→    mutationFn: (email: string) => updateProfile({ email }),
+   362→    onSuccess: (data) => {
+   363→      if (data.user) setUser(data.user);
+   364→      toast.success('Email updated successfully');
+   365→    },
+   366→    onError: (error) => toast.error(error.message),
+   367→  });
+   368→
+   369→  const deleteMutation = useMutation({
+   370→    mutationFn: deleteAccount,
+   371→    onSuccess: () => {
+   372→      toast.success('Account deleted');
+   373→      setUser(null);
+   374→      useAppStore.getState().navigate('landing');
+   375→    },
+   376→    onError: (error) => toast.error(error.message),
+   377→  });
+   378→
+   379→  const handleChangePassword = () => {
+   380→    if (!currentPassword) {
+   381→      toast.error('Current password is required');
+   382→      return;
+   383→    }
+   384→    if (newPassword.length < 6) {
+   385→      toast.error('New password must be at least 6 characters');
+   386→      return;
+   387→    }
+   388→    if (newPassword !== confirmPassword) {
+   389→      toast.error('Passwords do not match');
+   390→      return;
+   391→    }
+   392→    passwordMutation.mutate({ currentPassword, newPassword });
+   393→  };
+   394→
+   395→  const passwordStrength = newPassword.length === 0 ? 0 : newPassword.length < 6 ? 1 : newPassword.length < 10 ? 2 : 3;
+   396→  const strengthColors = ['', 'bg-red-400', 'bg-amber-400', 'bg-emerald-400'];
+   397→  const strengthLabels = ['', 'Weak', 'Medium', 'Strong'];
+   398→
+   399→  return (
+   400→    <div className="space-y-6">
+   401→      {/* Change Password */}
+   402→      <Card className="border-0 shadow-sm">
+   403→        <CardHeader className="pb-3">
+   404→          <CardTitle className="text-base flex items-center gap-2">
+   405→            <Lock className="size-4 text-emerald-600" /> Change Password
+   406→          </CardTitle>
+   407→          <CardDescription>Update your password to keep your account secure</CardDescription>
+   408→        </CardHeader>
+   409→        <CardContent className="space-y-4">
+   410→          <div className="space-y-2">
+   411→            <Label htmlFor="current-password">Current Password</Label>
+   412→            <div className="relative">
+   413→              <Input
+   414→                id="current-password"
+   415→                type={showCurrent ? 'text' : 'password'}
+   416→                value={currentPassword}
+   417→                onChange={(e) => setCurrentPassword(e.target.value)}
+   418→                placeholder="Enter current password"
+   419→              />
+   420→              <Button
+   421→                variant="ghost"
+   422→                size="icon"
+   423→                className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
+   424→                onClick={() => setShowCurrent(!showCurrent)}
+   425→              >
+   426→                {showCurrent ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+   427→              </Button>
+   428→            </div>
+   429→          </div>
+   430→
+   431→          <div className="space-y-2">
+   432→            <Label htmlFor="new-password">New Password</Label>
+   433→            <div className="relative">
+   434→              <Input
+   435→                id="new-password"
+   436→                type={showNew ? 'text' : 'password'}
+   437→                value={newPassword}
+   438→                onChange={(e) => setNewPassword(e.target.value)}
+   439→                placeholder="Enter new password"
+   440→              />
+   441→              <Button
+   442→                variant="ghost"
+   443→                size="icon"
+   444→                className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
+   445→                onClick={() => setShowNew(!showNew)}
+   446→              >
+   447→                {showNew ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+   448→              </Button>
+   449→            </div>
+   450→            {newPassword.length > 0 && (
+   451→              <div className="space-y-1">
+   452→                <div className="flex gap-1">
+   453→                  {[1, 2, 3].map((level) => (
+   454→                    <div
+   455→                      key={level}
+   456→                      className={`h-1 flex-1 rounded-full transition-colors ${level <= passwordStrength ? strengthColors[passwordStrength] : 'bg-muted'}`}
+   457→                    />
+   458→                  ))}
+   459→                </div>
+   460→                <p className="text-[10px] text-muted-foreground">{strengthLabels[passwordStrength]}</p>
+   461→              </div>
+   462→            )}
+   463→          </div>
+   464→
+   465→          <div className="space-y-2">
+   466→            <Label htmlFor="confirm-password">Confirm New Password</Label>
+   467→            <Input
+   468→              id="confirm-password"
+   469→              type="password"
+   470→              value={confirmPassword}
+   471→              onChange={(e) => setConfirmPassword(e.target.value)}
+   472→              placeholder="Confirm new password"
+   473→            />
+   474→            {confirmPassword && newPassword !== confirmPassword && (
+   475→              <p className="text-[10px] text-destructive">Passwords do not match</p>
+   476→            )}
+   477→          </div>
+   478→
+   479→          <div className="flex justify-end pt-2">
+   480→            <Button
+   481→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+   482→              onClick={handleChangePassword}
+   483→              disabled={passwordMutation.isPending}
+   484→            >
+   485→              <Lock className="size-4" />
+   486→              {passwordMutation.isPending ? 'Changing...' : 'Change Password'}
+   487→            </Button>
+   488→          </div>
+   489→        </CardContent>
+   490→      </Card>
+   491→
+   492→      {/* Change Email */}
+   493→      <Card className="border-0 shadow-sm">
+   494→        <CardHeader className="pb-3">
+   495→          <CardTitle className="text-base flex items-center gap-2">
+   496→            <Shield className="size-4 text-emerald-600" /> Email Address
+   497→          </CardTitle>
+   498→          <CardDescription>Update your email address</CardDescription>
+   499→        </CardHeader>
+   500→        <CardContent className="space-y-4">
+   501→          <div className="space-y-2">
+   502→            <Label htmlFor="settings-email">Email</Label>
+   503→            <div className="flex gap-2">
+   504→              <Input
+   505→                id="settings-email"
+   506→                type="email"
+   507→                value={emailValue}
+   508→                onChange={(e) => setEmailValue(e.target.value)}
+   509→                placeholder="your@email.com"
+   510→              />
+   511→              <Button
+   512→                className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+   513→                onClick={() => {
+   514→                  if (emailValue !== user?.email) {
+   515→                    emailMutation.mutate(emailValue);
+   516→                  }
+   517→                }}
+   518→                disabled={emailMutation.isPending || emailValue === user?.email}
+   519→              >
+   520→                {emailMutation.isPending ? 'Updating...' : 'Update'}
+   521→              </Button>
+   522→            </div>
+   523→          </div>
+   524→        </CardContent>
+   525→      </Card>
+   526→
+   527→      {/* Danger Zone */}
+   528→      <Card className="border-0 shadow-sm border-l-4 border-l-destructive">
+   529→        <CardHeader className="pb-3">
+   530→          <CardTitle className="text-base flex items-center gap-2 text-destructive">
+   531→            <AlertTriangle className="size-4" /> Danger Zone
+   532→          </CardTitle>
+   533→          <CardDescription>Irreversible actions that affect your account</CardDescription>
+   534→        </CardHeader>
+   535→        <CardContent className="space-y-4">
+   536→          <div className="flex items-center justify-between p-3 rounded-lg bg-destructive/5">
+   537→            <div>
+   538→              <p className="text-sm font-medium">Delete Account</p>
+   539→              <p className="text-xs text-muted-foreground">
+   540→                Permanently delete your account and all associated data. This action cannot be undone.
+   541→              </p>
+   542→            </div>
+   543→            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+   544→              <AlertDialogTrigger asChild>
+   545→                <Button variant="destructive" size="sm" className="gap-1.5 shrink-0">
+   546→                  <Trash2 className="size-3.5" /> Delete Account
+   547→                </Button>
+   548→              </AlertDialogTrigger>
+   549→              <AlertDialogContent>
+   550→                <AlertDialogHeader>
+   551→                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+   552→                  <AlertDialogDescription>
+   553→                    This action cannot be undone. This will permanently delete your account and remove all your data from our servers.
+   554→                  </AlertDialogDescription>
+   555→                </AlertDialogHeader>
+   556→                <div className="space-y-2 py-2">
+   557→                  <Label>Type &quot;DELETE&quot; to confirm</Label>
+   558→                  <Input
+   559→                    value={deleteConfirm}
+   560→                    onChange={(e) => setDeleteConfirm(e.target.value)}
+   561→                    placeholder="DELETE"
+   562→                  />
+   563→                </div>
+   564→                <AlertDialogFooter>
+   565→                  <AlertDialogCancel onClick={() => setDeleteConfirm('')}>Cancel</AlertDialogCancel>
+   566→                  <AlertDialogAction
+   567→                    onClick={() => {
+   568→                      if (deleteConfirm === 'DELETE') {
+   569→                        deleteMutation.mutate();
+   570→                      } else {
+   571→                        toast.error('Please type DELETE to confirm');
+   572→                      }
+   573→                    }}
+   574→                    className="bg-destructive hover:bg-destructive/90"
+   575→                    disabled={deleteConfirm !== 'DELETE' || deleteMutation.isPending}
+   576→                  >
+   577→                    {deleteMutation.isPending ? 'Deleting...' : 'Delete Account'}
+   578→                  </AlertDialogAction>
+   579→                </AlertDialogFooter>
+   580→              </AlertDialogContent>
+   581→            </AlertDialog>
+   582→          </div>
+   583→        </CardContent>
+   584→      </Card>
+   585→    </div>
+   586→  );
+   587→}
+   588→
+   589→// ── Notification Settings Tab ───────────────────────────────────
+   590→function NotificationsTab() {
+   591→  const [notifications, setNotifications] = useState({
+   592→    emailComments: true,
+   593→    emailRatings: true,
+   594→    emailFollows: true,
+   595→    emailDownloads: false,
+   596→    emailSystem: true,
+   597→    inAppComments: true,
+   598→    inAppRatings: true,
+   599→    inAppFollows: true,
+   600→    inAppDownloads: true,
+   601→    inAppMentions: true,
+   602→    inAppAchievements: true,
+   603→    inAppSystem: true,
+   604→  });
+   605→
+   606→  const updateMutation = useMutation({
+   607→    mutationFn: (data: Record<string, unknown>) => updateProfile({ notificationPreferences: data }),
+   608→    onSuccess: () => toast.success('Notification preferences saved'),
+   609→    onError: (error) => toast.error(error.message),
+   610→  });
+   611→
+   612→  const handleToggle = (key: keyof typeof notifications) => {
+   613→    setNotifications((prev) => {
+   614→      const updated = { ...prev, [key]: !prev[key] };
+   615→      return updated;
+   616→    });
+   617→  };
+   618→
+   619→  const handleSave = () => {
+   620→    updateMutation.mutate(notifications);
+   621→  };
+   622→
+   623→  return (
+   624→    <div className="space-y-6">
+   625→      {/* Email Notifications */}
+   626→      <Card className="border-0 shadow-sm">
+   627→        <CardHeader className="pb-3">
+   628→          <CardTitle className="text-base flex items-center gap-2">
+   629→            <Bell className="size-4 text-emerald-600" /> Email Notifications
+   630→          </CardTitle>
+   631→          <CardDescription>Choose what emails you receive</CardDescription>
+   632→        </CardHeader>
+   633→        <CardContent className="space-y-4">
+   634→          <NotificationToggle
+   635→            label="Comments"
+   636→            description="Get notified when someone comments on your notes"
+   637→            checked={notifications.emailComments}
+   638→            onCheckedChange={() => handleToggle('emailComments')}
+   639→          />
+   640→          <Separator />
+   641→          <NotificationToggle
+   642→            label="Ratings"
+   643→            description="Get notified when someone rates your notes"
+   644→            checked={notifications.emailRatings}
+   645→            onCheckedChange={() => handleToggle('emailRatings')}
+   646→          />
+   647→          <Separator />
+   648→          <NotificationToggle
+   649→            label="New Followers"
+   650→            description="Get notified when someone follows you"
+   651→            checked={notifications.emailFollows}
+   652→            onCheckedChange={() => handleToggle('emailFollows')}
+   653→          />
+   654→          <Separator />
+   655→          <NotificationToggle
+   656→            label="Downloads"
+   657→            description="Get notified when someone downloads your notes"
+   658→            checked={notifications.emailDownloads}
+   659→            onCheckedChange={() => handleToggle('emailDownloads')}
+   660→          />
+   661→          <Separator />
+   662→          <NotificationToggle
+   663→            label="System Updates"
+   664→            description="Platform announcements and feature updates"
+   665→            checked={notifications.emailSystem}
+   666→            onCheckedChange={() => handleToggle('emailSystem')}
+   667→          />
+   668→        </CardContent>
+   669→      </Card>
+   670→
+   671→      {/* In-App Notifications */}
+   672→      <Card className="border-0 shadow-sm">
+   673→        <CardHeader className="pb-3">
+   674→          <CardTitle className="text-base flex items-center gap-2">
+   675→            <Bell className="size-4 text-teal-600" /> In-App Notifications
+   676→          </CardTitle>
+   677→          <CardDescription>Choose what you see in the notification center</CardDescription>
+   678→        </CardHeader>
+   679→        <CardContent className="space-y-4">
+   680→          <NotificationToggle
+   681→            label="Comments"
+   682→            description="Notify when someone comments on your notes"
+   683→            checked={notifications.inAppComments}
+   684→            onCheckedChange={() => handleToggle('inAppComments')}
+   685→          />
+   686→          <Separator />
+   687→          <NotificationToggle
+   688→            label="Ratings"
+   689→            description="Notify when someone rates your notes"
+   690→            checked={notifications.inAppRatings}
+   691→            onCheckedChange={() => handleToggle('inAppRatings')}
+   692→          />
+   693→          <Separator />
+   694→          <NotificationToggle
+   695→            label="Follows"
+   696→            description="Notify when someone follows you"
+   697→            checked={notifications.inAppFollows}
+   698→            onCheckedChange={() => handleToggle('inAppFollows')}
+   699→          />
+   700→          <Separator />
+   701→          <NotificationToggle
+   702→            label="Downloads"
+   703→            description="Notify when someone downloads your notes"
+   704→            checked={notifications.inAppDownloads}
+   705→            onCheckedChange={() => handleToggle('inAppDownloads')}
+   706→          />
+   707→          <Separator />
+   708→          <NotificationToggle
+   709→            label="Mentions"
+   710→            description="Notify when someone mentions you"
+   711→            checked={notifications.inAppMentions}
+   712→            onCheckedChange={() => handleToggle('inAppMentions')}
+   713→          />
+   714→          <Separator />
+   715→          <NotificationToggle
+   716→            label="Achievements"
+   717→            description="Notify when you unlock an achievement"
+   718→            checked={notifications.inAppAchievements}
+   719→            onCheckedChange={() => handleToggle('inAppAchievements')}
+   720→          />
+   721→          <Separator />
+   722→          <NotificationToggle
+   723→            label="System"
+   724→            description="Platform announcements and updates"
+   725→            checked={notifications.inAppSystem}
+   726→            onCheckedChange={() => handleToggle('inAppSystem')}
+   727→          />
+   728→        </CardContent>
+   729→      </Card>
+   730→
+   731→      <div className="flex justify-end">
+   732→        <Button
+   733→          className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+   734→          onClick={handleSave}
+   735→          disabled={updateMutation.isPending}
+   736→        >
+   737→          <Save className="size-4" />
+   738→          {updateMutation.isPending ? 'Saving...' : 'Save Preferences'}
+   739→        </Button>
+   740→      </div>
+   741→    </div>
+   742→  );
+   743→}
+   744→
+   745→// ── Notification Toggle Row ─────────────────────────────────────
+   746→function NotificationToggle({
+   747→  label,
+   748→  description,
+   749→  checked,
+   750→  onCheckedChange,
+   751→}: {
+   752→  label: string;
+   753→  description: string;
+   754→  checked: boolean;
+   755→  onCheckedChange: () => void;
+   756→}) {
+   757→  return (
+   758→    <div className="flex items-center justify-between gap-4">
+   759→      <div className="space-y-0.5">
+   760→        <p className="text-sm font-medium">{label}</p>
+   761→        <p className="text-xs text-muted-foreground">{description}</p>
+   762→      </div>
+   763→      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+   764→    </div>
+   765→  );
+   766→}
+   767→
+   768→// ── Appearance Settings Tab ─────────────────────────────────────
+   769→function AppearanceTab() {
+   770→  const { theme, setTheme } = useTheme();
+   771→  const [compactMode, setCompactMode] = useState(false);
+   772→  const [sidebarPosition, setSidebarPosition] = useState('left');
+   773→
+   774→  const updateMutation = useMutation({
+   775→    mutationFn: (data: Record<string, unknown>) => updateProfile({ appearance: data }),
+   776→    onSuccess: () => toast.success('Appearance settings saved'),
+   777→    onError: (error) => toast.error(error.message),
+   778→  });
+   779→
+   780→  const handleSave = () => {
+   781→    updateMutation.mutate({ compactMode, sidebarPosition });
+   782→  };
+   783→
+   784→  const themes = [
+   785→    { value: 'light', label: 'Light', icon: Sun, desc: 'Clean and bright' },
+   786→    { value: 'dark', label: 'Dark', icon: Moon, desc: 'Easy on the eyes' },
+   787→    { value: 'system', label: 'System', icon: Monitor, desc: 'Follow system setting' },
+   788→  ];
+   789→
+   790→  return (
+   791→    <div className="space-y-6">
+   792→      {/* Theme Selection */}
+   793→      <Card className="border-0 shadow-sm">
+   794→        <CardHeader className="pb-3">
+   795→          <CardTitle className="text-base flex items-center gap-2">
+   796→            <Palette className="size-4 text-emerald-600" /> Theme
+   797→          </CardTitle>
+   798→          <CardDescription>Choose how NotesPedia looks to you</CardDescription>
+   799→        </CardHeader>
+   800→        <CardContent>
+   801→          <div className="grid grid-cols-3 gap-3">
+   802→            {themes.map((t) => {
+   803→              const Icon = t.icon;
+   804→              const isActive = theme === t.value;
+   805→              return (
+   806→                <motion.button
+   807→                  key={t.value}
+   808→                  whileHover={{ scale: 1.02 }}
+   809→                  whileTap={{ scale: 0.98 }}
+   810→                  onClick={() => setTheme(t.value)}
+   811→                  className={`relative rounded-xl p-4 text-center border-2 transition-all ${
+   812→                    isActive
+   813→                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30'
+   814→                      : 'border-muted hover:border-emerald-200 dark:hover:border-emerald-800'
+   815→                  }`}
+   816→                >
+   817→                  <Icon className={`size-6 mx-auto mb-2 ${isActive ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+   818→                  <p className={`text-sm font-medium ${isActive ? 'text-emerald-600' : ''}`}>{t.label}</p>
+   819→                  <p className="text-[10px] text-muted-foreground">{t.desc}</p>
+   820→                  {isActive && (
+   821→                    <div className="absolute -top-1 -right-1 size-4 rounded-full bg-emerald-500 flex items-center justify-center">
+   822→                      <svg className="size-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+   823→                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+   824→                      </svg>
+   825→                    </div>
+   826→                  )}
+   827→                </motion.button>
+   828→              );
+   829→            })}
+   830→          </div>
+   831→        </CardContent>
+   832→      </Card>
+   833→
+   834→      {/* Display Preferences */}
+   835→      <Card className="border-0 shadow-sm">
+   836→        <CardHeader className="pb-3">
+   837→          <CardTitle className="text-base flex items-center gap-2">
+   838→            <Settings className="size-4 text-emerald-600" /> Display Preferences
+   839→          </CardTitle>
+   840→        </CardHeader>
+   841→        <CardContent className="space-y-5">
+   842→          <div className="flex items-center justify-between gap-4">
+   843→            <div className="space-y-0.5">
+   844→              <p className="text-sm font-medium">Compact Mode</p>
+   845→              <p className="text-xs text-muted-foreground">
+   846→                Reduce spacing and show more content on screen
+   847→              </p>
+   848→            </div>
+   849→            <Switch checked={compactMode} onCheckedChange={setCompactMode} />
+   850→          </div>
+   851→          <Separator />
+   852→          <div className="flex items-center justify-between gap-4">
+   853→            <div className="space-y-0.5">
+   854→              <p className="text-sm font-medium">Sidebar Position</p>
+   855→              <p className="text-xs text-muted-foreground">Choose where the sidebar appears</p>
+   856→            </div>
+   857→            <Select value={sidebarPosition} onValueChange={setSidebarPosition}>
+   858→              <SelectTrigger className="w-[120px] h-9">
+   859→                <SelectValue />
+   860→              </SelectTrigger>
+   861→              <SelectContent>
+   862→                <SelectItem value="left">Left</SelectItem>
+   863→                <SelectItem value="right">Right</SelectItem>
+   864→              </SelectContent>
+   865→            </Select>
+   866→          </div>
+   867→        </CardContent>
+   868→      </Card>
+   869→
+   870→      <div className="flex justify-end">
+   871→        <Button
+   872→          className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+   873→          onClick={handleSave}
+   874→          disabled={updateMutation.isPending}
+   875→        >
+   876→          <Save className="size-4" />
+   877→          {updateMutation.isPending ? 'Saving...' : 'Save Appearance'}
+   878→        </Button>
+   879→      </div>
+   880→    </div>
+   881→  );
+   882→}
+   883→
+   884→// ── Main Settings Page ──────────────────────────────────────────
+   885→export function SettingsPage() {
+   886→  const { user } = useAppStore();
+   887→  const [activeTab, setActiveTab] = useState('profile');
+   888→
+   889→  return (
+   890→    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-4xl mx-auto">
+   891→      {/* Header */}
+   892→      <motion.div
+   893→        initial={{ opacity: 0, y: -10 }}
+   894→        animate={{ opacity: 1, y: 0 }}
+   895→      >
+   896→        <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+   897→          <Settings className="size-7 text-emerald-600" />
+   898→          Settings
+   899→        </h1>
+   900→        <p className="text-sm text-muted-foreground mt-0.5">
+   901→          Manage your account settings and preferences
+   902→        </p>
+   903→      </motion.div>
+   904→
+   905→      {/* Tabs */}
+   906→      <Tabs value={activeTab} onValueChange={setActiveTab}>
+   907→        <TabsList className="bg-muted/50">
+   908→          <TabsTrigger value="profile" className="text-xs gap-1.5">
+   909→            <User className="size-3.5" /> Profile
+   910→          </TabsTrigger>
+   911→          <TabsTrigger value="account" className="text-xs gap-1.5">
+   912→            <Lock className="size-3.5" /> Account
+   913→          </TabsTrigger>
+   914→          <TabsTrigger value="notifications" className="text-xs gap-1.5">
+   915→            <Bell className="size-3.5" /> Notifications
+   916→          </TabsTrigger>
+   917→          <TabsTrigger value="appearance" className="text-xs gap-1.5">
+   918→            <Palette className="size-3.5" /> Appearance
+   919→          </TabsTrigger>
+   920→        </TabsList>
+   921→
+   922→        <TabsContent value="profile" className="mt-6">
+   923→          <ProfileTab />
+   924→        </TabsContent>
+   925→        <TabsContent value="account" className="mt-6">
+   926→          <AccountTab />
+   927→        </TabsContent>
+   928→        <TabsContent value="notifications" className="mt-6">
+   929→          <NotificationsTab />
+   930→        </TabsContent>
+   931→        <TabsContent value="appearance" className="mt-6">
+   932→          <AppearanceTab />
+   933→        </TabsContent>
+   934→      </Tabs>
+   935→    </div>
+   936→  );
+   937→}
+   938→

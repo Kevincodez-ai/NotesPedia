@@ -1204,3 +1204,33 @@ Stage Summary:
 - All new fields (storageKey, emailVerificationToken) added to Prisma schema
 - Lint passes clean, server runs on port 3000, all API endpoints verified working
 - Production migration path: change provider to "postgresql", set DATABASE_URL to Supabase, run db:push
+
+---
+Task ID: 2a
+Agent: Bug Fix Agent
+Task: Fix 3 CRITICAL bugs in NotesPedia
+
+Work Log:
+- BUG-01: Fixed password reset email link pointing to API endpoint (405 error)
+  - Changed `src/lib/email.ts` reset URL from `/api/auth/reset-password?token=XXX` to `/?reset-password=true&token=XXX`
+  - Updated `src/app/page.tsx` to read `reset-password` and `token` from URL search params on mount, auto-navigate to reset-password page with token as pageParams
+  - Added verification toast handling for `verification=success|expired|failed` query params
+  - Updated `src/components/features/reset-password-page.tsx` to read token from `pageParams.id` instead of `window.location.search`
+
+- BUG-02: Fixed private notes leaking to all authenticated users
+  - Added visibility check in `src/app/api/notes/route.ts` after uploaderId filter
+  - Non-admin users can only see public notes unless they are viewing their own uploads
+  - Admin/super_admin/moderator roles bypass the visibility filter
+
+- BUG-03: Fixed dashboard reputation score always showing 0
+  - Replaced broken `(user as Record<string, unknown>).reputationScore` cast with actual API fetch
+  - Added useQuery hook to fetch user profile from `/api/users/{userId}` which returns `reputationScore`
+  - Used `profileData?.profile?.reputationScore ?? 0` for the displayed value
+
+All fixes verified with `bun run lint` — no errors.
+
+Stage Summary:
+- Total bugs fixed: 3 (all CRITICAL)
+- Files modified: 4 (email.ts, page.tsx, reset-password-page.tsx, notes/route.ts, dashboard.tsx)
+- Security improvements: 1 (private notes visibility fix)
+- UX improvements: 2 (password reset flow, reputation score display)

@@ -198,6 +198,18 @@ export function DashboardPage() {
     queryFn: () => fetchNotes(`uploaderId=${user?.id || ''}&limit=100`),
   });
 
+  // Fetch user's profile for reputationScore
+  const { data: profileData } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const res = await fetch(`/api/users/${user.id}`);
+      if (!res.ok) throw new Error('Failed to fetch profile');
+      return res.json();
+    },
+    enabled: !!user?.id,
+  });
+
   // Fetch bookmarks count
   const { data: bookmarksData } = useQuery({
     queryKey: ['bookmarks-count'],
@@ -214,8 +226,8 @@ export function DashboardPage() {
   const bookmarksCount = bookmarksData?.total ?? 0;
   const totalNotes = trendingData?.total ?? 0;
 
-  // Use reputation from user data in the store
-  const reputationScore = user ? (user as Record<string, unknown>).reputationScore as number ?? 0 : 0;
+  // Use reputation from user profile API response
+  const reputationScore = profileData?.profile?.reputationScore ?? 0;
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">

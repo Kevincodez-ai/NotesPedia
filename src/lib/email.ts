@@ -77,7 +77,7 @@ export async function sendVerificationEmail(email: string, token: string, userNa
 }
 
 export async function sendPasswordResetEmail(email: string, token: string, userName: string): Promise<boolean> {
-  const resetUrl = `${appUrl}/api/auth/reset-password?token=${token}`;
+  const resetUrl = `${appUrl}/?reset-password=true&token=${token}`;
   return sendEmail({
     to: email,
     subject: 'Reset your NotesPedia password',

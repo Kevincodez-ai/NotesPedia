@@ -51,6 +51,12 @@ export async function GET(request: NextRequest) {
     if (departmentId) where.departmentId = departmentId;
     if (semester) { const s = parseInt(semester); if (!isNaN(s)) where.semester = s; }
     if (uploaderId) where.uploaderId = uploaderId;
+    // Only show public notes, or own notes, or notes visible to admins
+    if (!['admin', 'super_admin', 'moderator'].includes(user.role)) {
+      if (!uploaderId || uploaderId !== user.id) {
+        where.isPublic = true;
+      }
+    }
     if (fileType) where.fileType = fileType;
     if (q) {
       where.OR = [

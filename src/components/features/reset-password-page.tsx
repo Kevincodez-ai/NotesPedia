@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 export function ResetPasswordPage() {
-  const { navigate } = useAppStore();
+  const { navigate, pageParams } = useAppStore();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -20,15 +20,14 @@ export function ResetPasswordPage() {
   const [isInvalid, setIsInvalid] = useState(false);
 
   useEffect(() => {
-    // Extract token from URL query params
-    const params = new URLSearchParams(window.location.search);
-    const resetToken = params.get('token');
+    // Extract token from pageParams (set by page.tsx from URL query)
+    const resetToken = pageParams?.id || null;
     if (!resetToken) {
       setIsInvalid(true);
     } else {
       setToken(resetToken);
     }
-  }, []);
+  }, [pageParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

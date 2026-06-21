@@ -20,9 +20,11 @@ import { ForgotPasswordPage } from '@/components/features/forgot-password-page';
 import { ResetPasswordPage } from '@/components/features/reset-password-page';
 import { AppShell } from '@/components/layout/app-shell';
 import { CommandPalette } from '@/components/layout/command-palette';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Home() {
-  const { currentPage, pageParams, isAuthenticated, isLoading, setUser, setLoading } = useAppStore();
+  const { currentPage, pageParams, isAuthenticated, isLoading, setUser, setLoading, navigate } = useAppStore();
+  const { toast } = useToast();
 
   useEffect(() => {
     // Check auth status on load
@@ -41,6 +43,35 @@ export default function Home() {
     };
     checkAuth();
   }, [setUser]);
+
+  useEffect(() => {
+    // Handle URL query params for password reset and email verification
+    const params = new URLSearchParams(window.location.search);
+
+    // Password reset flow: redirect to reset-password page with token
+    const isResetPassword = params.get('reset-password');
+    const resetToken = params.get('token');
+    if (isResetPassword === 'true' && resetToken) {
+      navigate('reset-password', { id: resetToken });
+      // Clean up URL
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+
+    // Email verification feedback
+    const verification = params.get('verification');
+    if (verification) {
+      if (verification === 'success') {
+        toast({ title: 'Email verified!', description: 'Your email has been verified successfully.' });
+      } else if (verification === 'expired') {
+        toast({ title: 'Link expired', description: 'This verification link has expired. Please request a new one.', variant: 'destructive' });
+      } else if (verification === 'failed') {
+        toast({ title: 'Verification failed', description: 'Email verification failed. Please try again.', variant: 'destructive' });
+      }
+      // Clean up URL
+      window.history.replaceState({}, '', '/');
+    }
+  }, [navigate, toast]);
 
   // Keyboard shortcut Ctrl+K is handled by CommandPalette component
 

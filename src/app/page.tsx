@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useAppStore } from '@/store/app-store';
+import React, { useEffect, useRef } from 'react';
+import { useAppStore, revalidateAuth, setupCrossTabAuthSync } from '@/store/app-store';
 import { LandingPage } from '@/components/features/landing-page';
 import { DashboardPage } from '@/components/features/dashboard';
 import { LoginPage } from '@/components/features/login-page';
@@ -26,23 +26,20 @@ export default function Home() {
   const { currentPage, pageParams, isAuthenticated, isLoading, setUser, setLoading, navigate } = useAppStore();
   const { toast } = useToast();
 
+  // Cross-tab auth sync cleanup ref
+  const cleanupRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     // Check auth status on load
-    const checkAuth = async () => {
-      try {
-        const res = await fetch('/api/auth');
-        const data = await res.json();
-        if (data.success && data.user) {
-          setUser(data.user);
-        } else {
-          setUser(null);
-        }
-      } catch {
-        setUser(null);
-      }
+    revalidateAuth();
+
+    // Set up cross-tab auth synchronization
+    cleanupRef.current = setupCrossTabAuthSync();
+
+    return () => {
+      cleanupRef.current?.();
     };
-    checkAuth();
-  }, [setUser]);
+  }, []);
 
   useEffect(() => {
     // Handle URL query params for password reset and email verification

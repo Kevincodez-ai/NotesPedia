@@ -161,11 +161,11 @@ export async function GET() {
 
 const updateProfileSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-  bio: z.string().max(500, 'Bio must be at most 500 characters').optional(),
-  avatarUrl: z.string().url('Invalid avatar URL').optional(),
-  collegeId: z.string().optional(),
-  departmentId: z.string().optional(),
-  semester: z.number().int().min(1).max(12).optional(),
+  bio: z.string().max(500, 'Bio must be at most 500 characters').nullable().optional(),
+  avatarUrl: z.string().url('Invalid avatar URL').nullable().optional(),
+  collegeId: z.string().nullable().optional(),
+  departmentId: z.string().nullable().optional(),
+  semester: z.number().int().min(1).max(12).nullable().optional(),
 });
 
 export async function PUT(request: NextRequest) {

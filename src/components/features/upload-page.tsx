@@ -229,16 +229,22 @@ export function UploadPage() {
           collegeId: collegeId || undefined,
           semester: semester ? parseInt(semester) : undefined,
           tags,
-          filePath: uploadData.filePath,
-          fileType: uploadData.fileType,
-          fileSize: uploadData.fileSize,
-          extractedText: uploadData.extractedText,
+          filePath: uploadData.filePath || undefined,
+          storageKey: uploadData.storageKey || undefined,
+          fileType: uploadData.fileType || undefined,
+          fileSize: uploadData.fileSize || undefined,
+          extractedText: uploadData.extractedText || undefined,
           previewText: uploadData.extractedText?.slice(0, 500) || undefined,
         }),
       });
 
       if (!noteRes.ok) {
-        const errData = await noteRes.json();
+        let errData;
+        try {
+          errData = await noteRes.json();
+        } catch {
+          throw new Error(`Failed to create note (HTTP ${noteRes.status})`);
+        }
         throw new Error(errData.error || 'Failed to create note');
       }
 

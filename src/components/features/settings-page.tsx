@@ -189,11 +189,11 @@ function ProfileTab() {
     }
     updateMutation.mutate({
       name: name.trim(),
-      bio: bio.trim(),
-      collegeId: collegeId || undefined,
-      departmentId: departmentId || undefined,
-      semester: semester ? parseInt(semester) : undefined,
-      avatarUrl: avatarUrl || undefined,
+      bio: bio.trim() || null,
+      collegeId: collegeId || null,
+      departmentId: departmentId || null,
+      semester: semester ? parseInt(semester) : null,
+      avatarUrl: avatarUrl.trim() || null,
     });
   };
 

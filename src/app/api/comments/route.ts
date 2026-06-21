@@ -11,7 +11,7 @@ const editCommentSchema = z.object({
 const createCommentSchema = z.object({
   noteId: z.string().min(1),
   content: z.string().min(1, 'Content is required').max(2000, 'Comment must be at most 2000 characters'),
-  parentId: z.string().optional(),
+  parentId: z.string().nullable().optional(),
 });
 
 // PUT - Edit a comment

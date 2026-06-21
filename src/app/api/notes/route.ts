@@ -5,18 +5,18 @@ import { z } from 'zod';
 
 const createNoteSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title must be at most 200 characters'),
-  description: z.string().max(2000, 'Description must be at most 2000 characters').optional(),
-  subjectId: z.string().optional(),
-  collegeId: z.string().optional(),
-  departmentId: z.string().optional(),
-  semester: z.number().int().min(1).max(12).optional(),
+  description: z.string().max(2000, 'Description must be at most 2000 characters').nullable().optional(),
+  subjectId: z.string().nullable().optional(),
+  collegeId: z.string().nullable().optional(),
+  departmentId: z.string().nullable().optional(),
+  semester: z.number().int().min(1).max(12).nullable().optional(),
   tags: z.array(z.string().max(50, 'Tag too long')).max(10, 'Maximum 10 tags').optional(),
-  filePath: z.string().max(500).optional(),
-  storageKey: z.string().max(500).optional(),
-  fileType: z.string().max(20).optional(),
-  fileSize: z.number().int().positive().optional(),
-  extractedText: z.string().max(100000).optional(),
-  previewText: z.string().max(2000).optional(),
+  filePath: z.string().max(500).nullable().optional(),
+  storageKey: z.string().max(500).nullable().optional(),
+  fileType: z.string().max(20).nullable().optional(),
+  fileSize: z.number().int().positive().nullable().optional(),
+  extractedText: z.string().max(100000).nullable().optional(),
+  previewText: z.string().max(2000).nullable().optional(),
 });
 
 export async function GET(request: NextRequest) {

@@ -205,7 +205,12 @@ export function UploadPage() {
       });
 
       if (!uploadRes.ok) {
-        const errData = await uploadRes.json();
+        let errData;
+        try {
+          errData = await uploadRes.json();
+        } catch {
+          throw new Error(`Upload failed (HTTP ${uploadRes.status}). The server may be experiencing an issue.`);
+        }
         throw new Error(errData.error || 'Upload failed');
       }
 

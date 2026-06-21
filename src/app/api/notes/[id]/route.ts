@@ -204,6 +204,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
     }
 
+    // Block access to private/non-public notes for unauthenticated users
+    if (!user && !note.isPublic) {
+      return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
+    }
+
     await db.note.update({
       where: { id },
       data: { viewCount: { increment: 1 } },

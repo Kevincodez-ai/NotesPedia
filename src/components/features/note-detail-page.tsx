@@ -1207,11 +1207,28 @@ export function NoteDetailPage({ noteId }: { noteId: string }) {
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => {
             const message = `Check out '${note.title}' on NotesPedia!`;
-            navigator.clipboard.writeText(message).then(() => {
-              toast.success('Link copied to clipboard!');
-            }).catch(() => {
-              toast.error('Failed to copy');
-            });
+            if (navigator.clipboard && window.isSecureContext) {
+              navigator.clipboard.writeText(message).then(() => {
+                toast.success('Link copied to clipboard!');
+              }).catch(() => {
+                toast.error('Failed to copy');
+              });
+            } else {
+              // Fallback for non-secure contexts
+              const textArea = document.createElement('textarea');
+              textArea.value = message;
+              textArea.style.position = 'fixed';
+              textArea.style.left = '-9999px';
+              document.body.appendChild(textArea);
+              textArea.select();
+              try {
+                document.execCommand('copy');
+                toast.success('Link copied to clipboard!');
+              } catch {
+                toast.error('Failed to copy');
+              }
+              document.body.removeChild(textArea);
+            }
           }}>
             <Share2 className="size-4" /> Share
           </Button>

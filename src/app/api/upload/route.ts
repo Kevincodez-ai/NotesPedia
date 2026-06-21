@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { getSupabaseAdmin, isStorageConfigured, STORAGE_BUCKET } from '@/lib/supabase';
+import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter';
 
 const ALLOWED_TYPES: Record<string, string[]> = {
   'application/pdf': ['pdf'],
@@ -23,6 +24,13 @@ export async function POST(request: NextRequest) {
     const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Rate limit uploads
+    const clientId = getClientIdentifier(request, user.id);
+    const { allowed } = rateLimiter.check(`upload:${clientId}`, RateLimits.upload.limit, RateLimits.upload.windowMs);
+    if (!allowed) {
+      return NextResponse.json({ success: false, error: 'Upload limit reached. Please try again later.' }, { status: 429 });
     }
 
     const formData = await request.formData();

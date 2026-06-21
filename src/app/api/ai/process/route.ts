@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, hasRole } from '@/lib/auth';
+import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter';
 
 const SYSTEM_PROMPT = 'You are an expert academic assistant. Help students learn effectively. Always respond with valid JSON as requested. Do not include markdown code fences or extra text.';
 
@@ -38,6 +39,13 @@ export async function POST(request: NextRequest) {
     const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Rate limit AI processing (expensive operation)
+    const clientId = getClientIdentifier(request, user.id);
+    const { allowed } = rateLimiter.check(`ai:${clientId}`, RateLimits.ai.limit, RateLimits.ai.windowMs);
+    if (!allowed) {
+      return NextResponse.json({ success: false, error: 'AI processing limit reached. Please try again later.' }, { status: 429 });
     }
 
     const body = await request.json();

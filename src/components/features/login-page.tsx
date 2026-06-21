@@ -29,7 +29,18 @@ export function LoginPage() {
         body: JSON.stringify({ action: 'login', email, password }),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError('Server error. Please try again later.');
+        return;
+      }
+
+      if (!res.ok && !data?.success) {
+        setError(data?.error || 'Login failed. Please check your credentials.');
+        return;
+      }
 
       if (data.success && data.user) {
         setUser(data.user as AuthUser);

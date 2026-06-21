@@ -52,7 +52,18 @@ export function ResetPasswordPage() {
         body: JSON.stringify({ token, password }),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError('Server error. Please try again later.');
+        return;
+      }
+
+      if (!res.ok && !data?.success) {
+        setError(data?.error || 'Failed to reset password. Please try again.');
+        return;
+      }
 
       if (data.success) {
         setIsSuccess(true);

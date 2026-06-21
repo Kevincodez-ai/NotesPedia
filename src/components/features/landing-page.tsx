@@ -104,6 +104,7 @@ export function LandingPage() {
     async function loadStats() {
       try {
         const res = await fetch('/api/stats');
+        if (!res.ok) return;
         const data = await res.json();
         if (data.success && data.stats) {
           setStats([

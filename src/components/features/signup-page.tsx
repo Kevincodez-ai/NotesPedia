@@ -53,7 +53,18 @@ export function SignupPage() {
         body: JSON.stringify({ action: 'signup', name, email, password }),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError('Server error. Please try again later.');
+        return;
+      }
+
+      if (!res.ok && !data?.success) {
+        setError(data?.error || 'Signup failed. Please try again.');
+        return;
+      }
 
       if (data.success && data.user) {
         setUser(data.user as AuthUser);

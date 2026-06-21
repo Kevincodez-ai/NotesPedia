@@ -19,6 +19,7 @@ import {
   X,
   SlidersHorizontal,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -277,7 +278,7 @@ export function NotesPage() {
       queryClient.invalidateQueries({ queryKey: ['search'] });
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     } catch {
-      // Silently fail
+      toast.error('Failed to update bookmark. Please try again.');
     }
   }, [queryClient]);
 

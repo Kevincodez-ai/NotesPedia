@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword, verifyPassword, generateToken, setAuthCookie, getAuthUser, removeAuthCookie } from '@/lib/auth';
+import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter';
 import { z } from 'zod';
 
 const signupSchema = z.object({
@@ -20,6 +21,13 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === 'signup') {
+      // Rate limit signup attempts
+      const clientId = getClientIdentifier(request);
+      const { allowed } = rateLimiter.check(`signup:${clientId}`, RateLimits.auth.limit, RateLimits.auth.windowMs);
+      if (!allowed) {
+        return NextResponse.json({ success: false, error: 'Too many signup attempts. Please try again later.' }, { status: 429 });
+      }
+
       const data = signupSchema.parse(body);
       
       const existingUser = await db.user.findUnique({ where: { email: data.email } });
@@ -80,6 +88,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'login') {
+      // Rate limit login attempts
+      const clientId = getClientIdentifier(request);
+      const { allowed } = rateLimiter.check(`login:${clientId}`, RateLimits.auth.limit, RateLimits.auth.windowMs);
+      if (!allowed) {
+        return NextResponse.json({ success: false, error: 'Too many login attempts. Please try again later.' }, { status: 429 });
+      }
+
       const data = loginSchema.parse(body);
       
       const user = await db.user.findUnique({ where: { email: data.email } });

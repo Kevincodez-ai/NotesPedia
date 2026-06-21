@@ -21,6 +21,10 @@ interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
   toggleSidebar: () => void;
 
+  // Notifications (shared state to avoid duplicate polling)
+  unreadNotificationCount: number;
+  setUnreadNotificationCount: (count: number) => void;
+
   // Search
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -45,6 +49,10 @@ export const useAppStore = create<AppState>((set) => ({
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+
+  // Notifications
+  unreadNotificationCount: 0,
+  setUnreadNotificationCount: (unreadNotificationCount) => set({ unreadNotificationCount }),
 
   // Search
   searchQuery: '',

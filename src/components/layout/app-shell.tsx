@@ -75,21 +75,7 @@ const navItems: NavItem[] = [
 ];
 
 function AppSidebar() {
-  const { currentPage, navigate, user } = useAppStore();
-  const [unreadCount, setUnreadCount] = React.useState(0);
-
-  React.useEffect(() => {
-    const fetchUnread = async () => {
-      try {
-        const res = await fetch('/api/notifications?limit=1');
-        const data = await res.json();
-        if (data.success) setUnreadCount(data.unreadCount || 0);
-      } catch { /* ignore */ }
-    };
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const { currentPage, navigate, user, unreadNotificationCount } = useAppStore();
 
   const isAdmin = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'super_admin';
 
@@ -138,8 +124,8 @@ function AppSidebar() {
                     <item.icon className="size-4" />
                     <span>{item.title}</span>
                   </SidebarMenuButton>
-                  {item.page === 'notifications' && unreadCount > 0 && (
-                    <SidebarMenuBadge>{unreadCount}</SidebarMenuBadge>
+                  {item.page === 'notifications' && unreadNotificationCount > 0 && (
+                    <SidebarMenuBadge>{unreadNotificationCount}</SidebarMenuBadge>
                   )}
                 </SidebarMenuItem>
               ))}
@@ -377,7 +363,23 @@ const pageVariants = {
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { currentPage } = useAppStore();
+  const { currentPage, isAuthenticated, setUnreadNotificationCount } = useAppStore();
+
+  // Single notification polling instance (shared via Zustand store)
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch('/api/notifications?limit=1');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success) setUnreadNotificationCount(data.unreadCount || 0);
+      } catch { /* ignore */ }
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, setUnreadNotificationCount]);
 
   return (
     <SidebarProvider>
@@ -403,21 +405,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function NotificationBell() {
-  const { navigate } = useAppStore();
-  const [unreadCount, setUnreadCount] = React.useState(0);
-
-  React.useEffect(() => {
-    const fetchUnread = async () => {
-      try {
-        const res = await fetch('/api/notifications?limit=1');
-        const data = await res.json();
-        if (data.success) setUnreadCount(data.unreadCount || 0);
-      } catch { /* ignore */ }
-    };
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const { navigate, unreadNotificationCount } = useAppStore();
 
   return (
     <Button
@@ -427,9 +415,9 @@ function NotificationBell() {
       onClick={() => navigate('notifications')}
     >
       <Bell className="size-4" />
-      {unreadCount > 0 && (
+      {unreadNotificationCount > 0 && (
         <Badge className="absolute -top-1 -right-1 size-5 justify-center p-0 text-[10px] font-bold bg-destructive">
-          {unreadCount > 9 ? '9+' : unreadCount}
+          {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
         </Badge>
       )}
       <span className="sr-only">Notifications</span>

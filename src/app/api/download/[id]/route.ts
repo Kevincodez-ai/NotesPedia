@@ -34,37 +34,9 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Note not found' }, { status: 404 });
     }
 
-    // Increment download count
-    await db.note.update({
-      where: { id: note.id },
-      data: { downloadCount: { increment: 1 } },
-    });
-
-    // Create download record (ignore if already exists due to unique constraint)
-    try {
-      await db.download.create({
-        data: { noteId: note.id, userId: user.id },
-      });
-    } catch {
-      // Already downloaded before - that's fine, still allow download
-    }
-
-    // Award reputation to uploader
-    if (note.uploaderId !== user.id) {
-      try {
-        await db.profile.update({
-          where: { userId: note.uploaderId },
-          data: {
-            downloadCount: { increment: 1 },
-            reputationScore: { increment: 2 },
-          },
-        });
-        await db.reputationLog.create({
-          data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
-        });
-      } catch {
-        // Uploader may not have a profile yet
-      }
+    // Sanitize filePath to prevent path traversal attacks
+    if (note.filePath && (!note.filePath.startsWith('/uploads/') || note.filePath.includes('..'))) {
+      return NextResponse.json({ success: false, error: 'Invalid file path' }, { status: 400 });
     }
 
     // Try Supabase Storage first (if configured and note has storageKey)
@@ -89,6 +61,39 @@ export async function GET(
         const fileBuffer = await readFile(fullPath);
         const fileName = `${note.title.replace(/[^a-zA-Z0-9]/g, '_')}.${note.fileType || 'txt'}`;
 
+        // Increment download count and track AFTER successful file read
+        await db.note.update({
+          where: { id: note.id },
+          data: { downloadCount: { increment: 1 } },
+        });
+
+        // Create download record (ignore if already exists due to unique constraint)
+        try {
+          await db.download.create({
+            data: { noteId: note.id, userId: user.id },
+          });
+        } catch {
+          // Already downloaded before - that's fine, still allow download
+        }
+
+        // Award reputation to uploader
+        if (note.uploaderId !== user.id) {
+          try {
+            await db.profile.update({
+              where: { userId: note.uploaderId },
+              data: {
+                downloadCount: { increment: 1 },
+                reputationScore: { increment: 2 },
+              },
+            });
+            await db.reputationLog.create({
+              data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
+            });
+          } catch {
+            // Uploader may not have a profile yet
+          }
+        }
+
         return new NextResponse(fileBuffer, {
           headers: {
             'Content-Type': 'application/octet-stream',
@@ -108,6 +113,37 @@ export async function GET(
       // Use a clear naming convention: indicate this is extracted text content
       const baseName = note.title.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `${baseName}_extracted.txt`;
+
+      // Increment download count for extracted text too
+      await db.note.update({
+        where: { id: note.id },
+        data: { downloadCount: { increment: 1 } },
+      });
+
+      try {
+        await db.download.create({
+          data: { noteId: note.id, userId: user.id },
+        });
+      } catch {
+        // Already downloaded before
+      }
+
+      if (note.uploaderId !== user.id) {
+        try {
+          await db.profile.update({
+            where: { userId: note.uploaderId },
+            data: {
+              downloadCount: { increment: 1 },
+              reputationScore: { increment: 2 },
+            },
+          });
+          await db.reputationLog.create({
+            data: { userId: note.uploaderId, action: 'download', points: 2, noteId: note.id },
+          });
+        } catch {
+          // Uploader may not have a profile yet
+        }
+      }
 
       return new NextResponse(textBuffer, {
         headers: {

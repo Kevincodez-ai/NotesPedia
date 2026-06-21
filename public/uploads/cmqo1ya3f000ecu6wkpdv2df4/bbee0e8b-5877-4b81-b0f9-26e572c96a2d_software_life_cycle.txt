@@ -1,0 +1,23 @@
+Requirement Phase
+	-Req collection
+	Req Review
+Design
+	Architecture
+	
+Development
+	Developr
+	codig
+	whitebox
+	
+Testing
+	Manual testing
+	Automation testing
+	performance Testing
+Security
+	
+Release	
+	QA
+
+	UAT	
+Prodcution
+	

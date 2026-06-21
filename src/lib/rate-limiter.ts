@@ -56,21 +56,22 @@ class RateLimiter {
 export const rateLimiter = new RateLimiter();
 
 // Pre-configured rate limit presets
+// Pre-configured rate limit presets (lenient for academic platform)
 export const RateLimits = {
-  // Auth endpoints: 10 requests per 15 minutes
-  auth: { limit: 10, windowMs: 15 * 60 * 1000 },
-  // General API: 60 requests per minute
-  api: { limit: 60, windowMs: 60 * 1000 },
-  // Upload: 10 uploads per hour
-  upload: { limit: 10, windowMs: 60 * 60 * 1000 },
-  // Download: 30 downloads per hour
-  download: { limit: 30, windowMs: 60 * 60 * 1000 },
-  // AI processing: 5 per hour (expensive)
-  ai: { limit: 5, windowMs: 60 * 60 * 1000 },
-  // Search: 30 per minute
-  search: { limit: 30, windowMs: 60 * 1000 },
-  // Password reset: 3 per hour
-  passwordReset: { limit: 3, windowMs: 60 * 60 * 1000 },
+  // Auth endpoints: 20 requests per 15 minutes
+  auth: { limit: 20, windowMs: 15 * 60 * 1000 },
+  // General API: 120 requests per minute
+  api: { limit: 120, windowMs: 60 * 1000 },
+  // Upload: 20 uploads per hour
+  upload: { limit: 20, windowMs: 60 * 60 * 1000 },
+  // Download: 60 downloads per hour
+  download: { limit: 60, windowMs: 60 * 60 * 1000 },
+  // AI processing: 15 per hour
+  ai: { limit: 15, windowMs: 60 * 60 * 1000 },
+  // Search: 60 per minute
+  search: { limit: 60, windowMs: 60 * 1000 },
+  // Password reset: 5 per hour
+  passwordReset: { limit: 5, windowMs: 60 * 60 * 1000 },
 } as const;
 
 /**

@@ -80,6 +80,51 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 }));
 
+// ── Granular selector hooks ──────────────────────────────────────
+// Use these instead of the full store to prevent unnecessary re-renders.
+// Components subscribed to a specific slice only re-render when THAT slice changes.
+
+/** Current page name only. Does not re-render on user/auth changes. */
+export const useCurrentPage = () => useAppStore((s) => s.currentPage);
+
+/** Page params only. */
+export const usePageParams = () => useAppStore((s) => s.pageParams);
+
+/** Navigate function — stable reference, never causes re-renders. */
+export const useNavigate = () => useAppStore((s) => s.navigate);
+
+/** Authenticated user object. Re-renders only when user changes. */
+export const useUser = () => useAppStore((s) => s.user);
+
+/** Boolean auth status only. Re-renders only when auth flips. */
+export const useIsAuthenticated = () => useAppStore((s) => s.isAuthenticated);
+
+/** Loading flag only. */
+export const useIsLoading = () => useAppStore((s) => s.isLoading);
+
+/** Sidebar state + controls. */
+export const useSidebar = () =>
+  useAppStore((s) => ({
+    sidebarOpen: s.sidebarOpen,
+    setSidebarOpen: s.setSidebarOpen,
+    toggleSidebar: s.toggleSidebar,
+  }));
+
+/** Command palette state + controls. */
+export const useCommandPalette = () =>
+  useAppStore((s) => ({
+    commandPaletteOpen: s.commandPaletteOpen,
+    setCommandPaletteOpen: s.setCommandPaletteOpen,
+  }));
+
+/** Unread notification count only. */
+export const useUnreadCount = () => useAppStore((s) => s.unreadNotificationCount);
+
+/** setUnreadNotificationCount action only. */
+export const useSetUnreadCount = () => useAppStore((s) => s.setUnreadNotificationCount);
+
+// ── Auth helpers ─────────────────────────────────────────────────
+
 // AbortController for revalidateAuth — abort previous request if a new one starts
 let authAbortController: AbortController | null = null;
 
@@ -130,7 +175,7 @@ export async function revalidateAuth() {
  * Mechanisms:
  * 1. `storage` event — fires in Tab B when Tab A writes to localStorage
  * 2. `visibilitychange` — fires when user switches back to a tab
- * 3. Periodic check — safety net every 30 seconds
+ * 3. Periodic check — safety net every 30 seconds (only when tab is visible)
  */
 export function setupCrossTabAuthSync() {
   if (typeof window === 'undefined') return;
@@ -138,6 +183,9 @@ export function setupCrossTabAuthSync() {
   // 1. Listen for localStorage changes from other tabs
   const handleStorageChange = (e: StorageEvent) => {
     if (e.key === AUTH_SIGNAL_KEY && e.newValue) {
+      // Only revalidate when this tab is visible (fixes edge case where invisible
+      // tabs queue a revalidation that fires after becoming visible again)
+      if (document.visibilityState !== 'visible') return;
       try {
         const signal = JSON.parse(e.newValue);
         const currentState = useAppStore.getState();
@@ -165,7 +213,7 @@ export function setupCrossTabAuthSync() {
   };
   document.addEventListener('visibilitychange', handleVisibilityChange);
 
-  // 3. Periodic re-validation every 30s (safety net)
+  // 3. Periodic re-validation every 30s (safety net — only when tab is visible)
   const interval = setInterval(() => {
     if (document.visibilityState === 'visible') {
       revalidateAuth();

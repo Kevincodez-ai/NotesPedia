@@ -113,13 +113,17 @@ export async function GET(request: NextRequest) {
       userRating: note.ratings[0]?.value ?? null,
     }));
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       notes: formattedNotes,
       total,
       page,
       totalPages: Math.ceil(total / limit),
     });
+    // Cache authenticated note listings privately for 60s,
+    // serve stale for up to 5 min while revalidating in background.
+    response.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+    return response;
   } catch (error) {
     console.error('Notes fetch error:', error);
     return NextResponse.json({ success: false, error: 'Failed to fetch notes' }, { status: 500 });

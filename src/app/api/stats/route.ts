@@ -11,7 +11,7 @@ export async function GET() {
       db.subject.count(),
     ]);
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       stats: {
         totalUsers,
@@ -20,6 +20,9 @@ export async function GET() {
         totalSubjects,
       },
     });
+    // Public stats are safe to cache for 10 min — numbers change slowly
+    res.headers.set('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+    return res;
   } catch (error) {
     console.error('Public stats error:', error);
     return NextResponse.json(

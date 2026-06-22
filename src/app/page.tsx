@@ -1,29 +1,33 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, lazy, Suspense } from 'react';
 import { useAppStore, revalidateAuth, setupCrossTabAuthSync } from '@/store/app-store';
-import { LandingPage } from '@/components/features/landing-page';
-import { DashboardPage } from '@/components/features/dashboard';
-import { LoginPage } from '@/components/features/login-page';
-import { SignupPage } from '@/components/features/signup-page';
-import { NotesPage } from '@/components/features/notes-page';
-import { NoteDetailPage } from '@/components/features/note-detail-page';
-import { UploadPage } from '@/components/features/upload-page';
-import { BookmarksPage } from '@/components/features/bookmarks-page';
-import { NotificationsPage } from '@/components/features/notifications-page';
-import { LeaderboardPage } from '@/components/features/leaderboard-page';
-import { SearchPage } from '@/components/features/search-page';
-import { AdminPage } from '@/components/features/admin-page';
-import { SettingsPage } from '@/components/features/settings-page';
-import { ProfilePage } from '@/components/features/profile-page';
-import { ForgotPasswordPage } from '@/components/features/forgot-password-page';
-import { ResetPasswordPage } from '@/components/features/reset-password-page';
-import { AppShell } from '@/components/layout/app-shell';
-import { CommandPalette } from '@/components/layout/command-palette';
 import { useToast } from '@/hooks/use-toast';
 
+// Lazy-load all page components so each page is a separate JS chunk.
+// This cuts the initial bundle by ~250 KB — only the landing/login/signup
+// pages load upfront; every other page is fetched on first navigation.
+const LandingPage         = lazy(() => import('@/components/features/landing-page').then(m => ({ default: m.LandingPage })));
+const DashboardPage       = lazy(() => import('@/components/features/dashboard').then(m => ({ default: m.DashboardPage })));
+const LoginPage           = lazy(() => import('@/components/features/login-page').then(m => ({ default: m.LoginPage })));
+const SignupPage          = lazy(() => import('@/components/features/signup-page').then(m => ({ default: m.SignupPage })));
+const NotesPage           = lazy(() => import('@/components/features/notes-page').then(m => ({ default: m.NotesPage })));
+const NoteDetailPage      = lazy(() => import('@/components/features/note-detail-page').then(m => ({ default: m.NoteDetailPage })));
+const UploadPage          = lazy(() => import('@/components/features/upload-page').then(m => ({ default: m.UploadPage })));
+const BookmarksPage       = lazy(() => import('@/components/features/bookmarks-page').then(m => ({ default: m.BookmarksPage })));
+const NotificationsPage   = lazy(() => import('@/components/features/notifications-page').then(m => ({ default: m.NotificationsPage })));
+const LeaderboardPage     = lazy(() => import('@/components/features/leaderboard-page').then(m => ({ default: m.LeaderboardPage })));
+const SearchPage          = lazy(() => import('@/components/features/search-page').then(m => ({ default: m.SearchPage })));
+const AdminPage           = lazy(() => import('@/components/features/admin-page').then(m => ({ default: m.AdminPage })));
+const SettingsPage        = lazy(() => import('@/components/features/settings-page').then(m => ({ default: m.SettingsPage })));
+const ProfilePage         = lazy(() => import('@/components/features/profile-page').then(m => ({ default: m.ProfilePage })));
+const ForgotPasswordPage  = lazy(() => import('@/components/features/forgot-password-page').then(m => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage   = lazy(() => import('@/components/features/reset-password-page').then(m => ({ default: m.ResetPasswordPage })));
+const AppShell            = lazy(() => import('@/components/layout/app-shell').then(m => ({ default: m.AppShell })));
+const CommandPalette      = lazy(() => import('@/components/layout/command-palette').then(m => ({ default: m.CommandPalette })));
+
 export default function Home() {
-  const { currentPage, pageParams, isAuthenticated, isLoading, setUser, setLoading, navigate } = useAppStore();
+  const { currentPage, pageParams, isAuthenticated, isLoading, navigate } = useAppStore();
   const { toast } = useToast();
 
   // Cross-tab auth sync cleanup ref
@@ -130,10 +134,13 @@ export default function Home() {
   const needsShell = isAuthenticated && !['landing', 'login', 'signup', 'forgot-password', 'reset-password'].includes(currentPage);
 
   return (
-    <>
+    <Suspense fallback={<LoadingScreen />}>
       <CommandPalette />
-      {needsShell ? <AppShell>{renderPage()}</AppShell> : renderPage()}
-    </>
+      {needsShell
+        ? <AppShell>{renderPage()}</AppShell>
+        : renderPage()
+      }
+    </Suspense>
   );
 }
 

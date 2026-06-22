@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useCallback } from 'react';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion } from 'framer-motion';
 import {
@@ -11,21 +11,17 @@ import {
   TrendingUp,
   Bookmark,
   Star,
-  Eye,
-  Download,
-  BookOpen,
   ArrowRight,
   Clock,
   Sparkles,
   RefreshCw,
+  BookOpen,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import type { NoteCard } from '@/types';
-import { formatRelativeTime, fileTypeIcon } from '@/components/features/note-card';
+import { NoteCard, NoteCardGridSkeleton } from '@/components/features/note-card';
+import type { NoteCard as NoteCardType } from '@/types';
 
 // ── Animation variants ──────────────────────────────────────────
 const container = {
@@ -37,7 +33,7 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
 };
 
-// ── Fetchers ────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────
 
 function formatDate() {
   return new Date().toLocaleDateString('en-US', {
@@ -88,78 +84,21 @@ function StatCard({
   );
 }
 
-// ── Note Card ───────────────────────────────────────────────────
-function NoteCardItem({ note, onClick }: { note: NoteCard; onClick: () => void }) {
+// ── Stat Card Skeleton ──────────────────────────────────────────
+function StatCardSkeleton() {
   return (
-    <motion.div
-      whileHover={{ y: -4, transition: { duration: 0.2 } }}
-      whileTap={{ scale: 0.98 }}
-      className="cursor-pointer"
-      onClick={onClick}
-    >
-      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
-                {note.title}
-              </h3>
-              {note.subject && (
-                <Badge variant="secondary" className="mt-1.5 text-[10px] px-1.5 py-0">
-                  {note.subject.name}
-                </Badge>
-              )}
-            </div>
+    <Card className="border-0 shadow-sm">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-7 w-12" />
+            <Skeleton className="h-3 w-24" />
           </div>
-          {note.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{note.description}</p>
-          )}
-          <div className="flex items-center gap-2 pt-1">
-            <Avatar className="size-5">
-              {note.uploader.avatarUrl && <AvatarImage src={note.uploader.avatarUrl} />}
-              <AvatarFallback className="text-[9px] bg-emerald-100 text-emerald-700">
-                {note.uploader.name.charAt(0)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-[11px] text-muted-foreground truncate">{note.uploader.name}</span>
-            <span className="ml-auto text-[10px] text-muted-foreground">{formatRelativeTime(note.createdAt)}</span>
-          </div>
-          <div className="flex items-center gap-3 text-[10px] text-muted-foreground pt-0.5">
-            <span className="flex items-center gap-0.5"><Download className="size-3" />{note.downloadCount}</span>
-            <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{note.avgRating > 0 ? note.avgRating.toFixed(1) : '—'}</span>
-            <span className="flex items-center gap-0.5"><Eye className="size-3" />{note.viewCount}</span>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-}
-
-// ── Note Grid Skeleton ──────────────────────────────────────────
-function NoteGridSkeleton() {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Card key={i} className="border-0 shadow-sm">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <Skeleton className="size-8 rounded" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-              </div>
-            </div>
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-2/3" />
-            <div className="flex items-center gap-2">
-              <Skeleton className="size-5 rounded-full" />
-              <Skeleton className="h-3 w-20" />
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+          <Skeleton className="rounded-xl size-10" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -198,16 +137,20 @@ export function DashboardPage() {
   const { user, navigate } = useAppStore();
   const queryClient = useQueryClient();
 
-  // Fetch trending notes
+  // Fetch trending notes — keepPreviousData so the grid doesn't flash on refetch
   const { data: trendingData, isLoading: trendingLoading, isError: trendingError } = useQuery({
     queryKey: ['notes', 'trending'],
     queryFn: () => fetchNotes('sortBy=downloads&limit=6'),
+    placeholderData: keepPreviousData,
+    staleTime: 3 * 60 * 1000, // 3 min — trending changes slowly
   });
 
   // Fetch recent notes
   const { data: recentData, isLoading: recentLoading, isError: recentError } = useQuery({
     queryKey: ['notes', 'recent'],
     queryFn: () => fetchNotes('sortBy=date&limit=6'),
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000, // 1 min — recent changes often
   });
 
   // Fetch user's uploaded notes — only when user is authenticated
@@ -215,6 +158,7 @@ export function DashboardPage() {
     queryKey: ['notes', 'my-uploads', user?.id],
     queryFn: () => fetchNotes(`uploaderId=${user!.id}&limit=100`),
     enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch user's profile for reputationScore
@@ -227,6 +171,7 @@ export function DashboardPage() {
       return res.json();
     },
     enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch bookmarks count
@@ -237,10 +182,11 @@ export function DashboardPage() {
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
+    staleTime: 2 * 60 * 1000,
   });
 
-  const trendingNotes: NoteCard[] = trendingData?.notes ?? [];
-  const recentNotes: NoteCard[] = recentData?.notes ?? [];
+  const trendingNotes: NoteCardType[] = trendingData?.notes ?? [];
+  const recentNotes: NoteCardType[] = recentData?.notes ?? [];
   const myUploadsCount = myNotesData?.total ?? 0;
   const bookmarksCount = bookmarksData?.total ?? 0;
   const totalNotes = trendingData?.total ?? 0;
@@ -248,8 +194,10 @@ export function DashboardPage() {
   // Use reputation from user profile API response
   const reputationScore = profileData?.profile?.reputationScore ?? 0;
 
-  const retryTrending = () => queryClient.invalidateQueries({ queryKey: ['notes', 'trending'] });
-  const retryRecent = () => queryClient.invalidateQueries({ queryKey: ['notes', 'recent'] });
+  const retryTrending = useCallback(() => queryClient.invalidateQueries({ queryKey: ['notes', 'trending'] }), [queryClient]);
+  const retryRecent = useCallback(() => queryClient.invalidateQueries({ queryKey: ['notes', 'recent'] }), [queryClient]);
+
+  const handleNoteClick = useCallback((noteId: string) => navigate('note-detail', { id: noteId }), [navigate]);
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
@@ -290,10 +238,16 @@ export function DashboardPage() {
         animate="show"
         className="grid grid-cols-2 lg:grid-cols-4 gap-4"
       >
-        <StatCard title="Total Notes" value={totalNotes} icon={FileText} subtitle="Across platform" color="bg-emerald-500" />
-        <StatCard title="My Uploads" value={myUploadsCount} icon={Upload} subtitle="Contributed by you" color="bg-teal-500" />
-        <StatCard title="Bookmarks" value={bookmarksCount} icon={Bookmark} subtitle="Saved notes" color="bg-amber-500" />
-        <StatCard title="Reputation" value={reputationScore} icon={Star} subtitle="Contribution score" color="bg-rose-500" />
+        {trendingLoading ? (
+          Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)
+        ) : (
+          <>
+            <StatCard title="Total Notes" value={totalNotes} icon={FileText} subtitle="Across platform" color="bg-emerald-500" />
+            <StatCard title="My Uploads" value={myUploadsCount} icon={Upload} subtitle="Contributed by you" color="bg-teal-500" />
+            <StatCard title="Bookmarks" value={bookmarksCount} icon={Bookmark} subtitle="Saved notes" color="bg-amber-500" />
+            <StatCard title="Reputation" value={reputationScore} icon={Star} subtitle="Contribution score" color="bg-rose-500" />
+          </>
+        )}
       </motion.div>
 
       {/* ── Trending Notes ─────────────────────────────── */}
@@ -314,7 +268,7 @@ export function DashboardPage() {
         </motion.div>
 
         {trendingLoading ? (
-          <NoteGridSkeleton />
+          <NoteCardGridSkeleton count={6} />
         ) : trendingError ? (
           <ErrorState message="Failed to load trending notes" onRetry={retryTrending} />
         ) : trendingNotes.length === 0 ? (
@@ -332,7 +286,7 @@ export function DashboardPage() {
           <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {trendingNotes.map((note) => (
               <motion.div key={note.id} variants={item}>
-                <NoteCardItem note={note} onClick={() => navigate('note-detail', { id: note.id })} />
+                <NoteCard note={note} onClick={() => handleNoteClick(note.id)} />
               </motion.div>
             ))}
           </motion.div>
@@ -357,7 +311,7 @@ export function DashboardPage() {
         </motion.div>
 
         {recentLoading ? (
-          <NoteGridSkeleton />
+          <NoteCardGridSkeleton count={6} />
         ) : recentError ? (
           <ErrorState message="Failed to load recent notes" onRetry={retryRecent} />
         ) : recentNotes.length === 0 ? (
@@ -370,7 +324,7 @@ export function DashboardPage() {
           <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {recentNotes.map((note) => (
               <motion.div key={note.id} variants={item}>
-                <NoteCardItem note={note} onClick={() => navigate('note-detail', { id: note.id })} />
+                <NoteCard note={note} onClick={() => handleNoteClick(note.id)} />
               </motion.div>
             ))}
           </motion.div>
@@ -397,7 +351,7 @@ export function DashboardPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Button onClick={() => navigate('upload')} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm">
-                  <Upload className="size-4" /> Upload & Generate
+                  <Upload className="size-4" /> Upload &amp; Generate
                 </Button>
                 <Button variant="outline" onClick={() => navigate('notes')} className="gap-2">
                   <BookOpen className="size-4" /> Explore Notes

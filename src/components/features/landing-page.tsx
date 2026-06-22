@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion } from 'framer-motion';
 import {
@@ -77,14 +78,39 @@ const features = [
 ];
 
 const defaultStats = [
-  { value: '0', label: 'Students', icon: Users },
-  { value: '0', label: 'Notes', icon: FileText },
-  { value: '0', label: 'Colleges', icon: Building2 },
-  { value: '0', label: 'Subjects', icon: BookMarked },
+  { value: '0+', label: 'Students', icon: Users },
+  { value: '0+', label: 'Notes', icon: FileText },
+  { value: '0+', label: 'Colleges', icon: Building2 },
+  { value: '0+', label: 'Subjects', icon: BookMarked },
 ];
+
+async function fetchStats() {
+  const res = await fetch('/api/stats');
+  if (!res.ok) throw new Error('Failed to fetch stats');
+  return res.json();
+}
 
 export function LandingPage() {
   const { isAuthenticated, navigate } = useAppStore();
+
+  // Use TanStack Query for stats — automatic caching, deduplication, background refresh
+  const { data: statsData } = useQuery({
+    queryKey: ['landing-stats'],
+    queryFn: fetchStats,
+    staleTime: 10 * 60 * 1000, // 10 min — stats don't change frequently
+    gcTime: 30 * 60 * 1000,
+    // Don't throw on error — fall back to defaults silently
+    retry: 1,
+  });
+
+  const stats = statsData?.success && statsData?.stats
+    ? [
+        { value: statsData.stats.totalUsers.toLocaleString() + '+', label: 'Students', icon: Users },
+        { value: statsData.stats.totalNotes.toLocaleString() + '+', label: 'Notes', icon: FileText },
+        { value: statsData.stats.totalColleges.toLocaleString() + '+', label: 'Colleges', icon: Building2 },
+        { value: statsData.stats.totalSubjects.toLocaleString() + '+', label: 'Subjects', icon: BookMarked },
+      ]
+    : defaultStats;
 
   // Build footer links with real navigation actions
   const footerLinks: Record<string, { label: string; action: () => void }[]> = {
@@ -97,29 +123,6 @@ export function LandingPage() {
       { label: 'Leaderboard', action: () => navigate('leaderboard') },
     ],
   };
-
-  // Fetch dynamic stats
-  const [stats, setStats] = React.useState(defaultStats);
-  React.useEffect(() => {
-    async function loadStats() {
-      try {
-        const res = await fetch('/api/stats');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.success && data.stats) {
-          setStats([
-            { value: data.stats.totalUsers.toLocaleString() + '+', label: 'Students', icon: Users },
-            { value: data.stats.totalNotes.toLocaleString() + '+', label: 'Notes', icon: FileText },
-            { value: data.stats.totalColleges.toLocaleString() + '+', label: 'Colleges', icon: Building2 },
-            { value: data.stats.totalSubjects.toLocaleString() + '+', label: 'Subjects', icon: BookMarked },
-          ]);
-        }
-      } catch {
-        // keep default stats
-      }
-    }
-    loadStats();
-  }, []);
 
   const handleGetStarted = () => {
     if (isAuthenticated) {

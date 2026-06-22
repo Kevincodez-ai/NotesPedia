@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { useAppStore } from '@/store/app-store';
+import React, { useCallback } from 'react';
+import { useAppStore, useUnreadCount, useSetUnreadCount } from '@/store/app-store';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -18,7 +18,6 @@ import {
   Moon,
   LogOut,
   User,
-  Menu,
 } from 'lucide-react';
 import type { PageName } from '@/types';
 
@@ -58,7 +57,6 @@ interface NavItem {
   title: string;
   page: PageName;
   icon: React.ComponentType<{ className?: string }>;
-  badge?: number;
   adminOnly?: boolean;
 }
 
@@ -74,8 +72,38 @@ const navItems: NavItem[] = [
   { title: 'Settings', page: 'settings', icon: Settings },
 ];
 
+// ── Shared logout hook — eliminates the duplicated handler in UserNav + HeaderUserMenu ──
+function useLogout() {
+  const { setUser, navigate } = useAppStore();
+  return useCallback(async () => {
+    try {
+      await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logout' }),
+      });
+    } catch {
+      // ignore — cookie will expire on its own
+    }
+    setUser(null);
+    navigate('landing');
+  }, [setUser, navigate]);
+}
+
+// ── Helper — compute initials from a name string ──
+function getInitials(name?: string | null) {
+  if (!name) return 'U';
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
 function AppSidebar() {
-  const { currentPage, navigate, user, unreadNotificationCount } = useAppStore();
+  const { currentPage, navigate, user } = useAppStore();
+  const unreadNotificationCount = useUnreadCount();
 
   const isAdmin = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'super_admin';
 
@@ -161,30 +189,9 @@ function AppSidebar() {
 }
 
 function UserNav() {
-  const { user, navigate, setUser } = useAppStore();
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'logout' }),
-      });
-    } catch {
-      // ignore
-    }
-    setUser(null);
-    navigate('landing');
-  };
-
-  const initials = user?.name
-    ? user.name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : 'U';
+  const { user, navigate } = useAppStore();
+  const handleLogout = useLogout();
+  const initials = getInitials(user?.name);
 
   return (
     <DropdownMenu>
@@ -195,7 +202,7 @@ function UserNav() {
           tooltip={user?.name || 'User'}
         >
           <Avatar className="size-8">
-            <AvatarImage src={user?.avatarUrl} alt={user?.name} />
+            <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.name ?? undefined} />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
               {initials}
             </AvatarFallback>
@@ -206,12 +213,7 @@ function UserNav() {
           </div>
         </SidebarMenuButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="w-56"
-        align="end"
-        side="top"
-        sideOffset={4}
-      >
+      <DropdownMenuContent className="w-56" align="end" side="top" sideOffset={4}>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">{user?.name}</p>
@@ -291,37 +293,16 @@ function TopHeader() {
 }
 
 function HeaderUserMenu() {
-  const { user, navigate, setUser } = useAppStore();
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'logout' }),
-      });
-    } catch {
-      // ignore
-    }
-    setUser(null);
-    navigate('landing');
-  };
-
-  const initials = user?.name
-    ? user.name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : 'U';
+  const { user, navigate } = useAppStore();
+  const handleLogout = useLogout();
+  const initials = getInitials(user?.name);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative size-9 rounded-full">
           <Avatar className="size-8">
-            <AvatarImage src={user?.avatarUrl} alt={user?.name} />
+            <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.name ?? undefined} />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
               {initials}
             </AvatarFallback>
@@ -363,7 +344,8 @@ const pageVariants = {
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { currentPage, isAuthenticated, setUnreadNotificationCount } = useAppStore();
+  const { currentPage, isAuthenticated } = useAppStore();
+  const setUnreadNotificationCount = useSetUnreadCount();
 
   // Single notification polling instance (shared via Zustand store)
   React.useEffect(() => {
@@ -405,7 +387,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function NotificationBell() {
-  const { navigate, unreadNotificationCount } = useAppStore();
+  const { navigate } = useAppStore();
+  const unreadNotificationCount = useUnreadCount();
 
   return (
     <Button

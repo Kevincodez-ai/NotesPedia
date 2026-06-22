@@ -49,13 +49,16 @@ export async function GET(request: NextRequest) {
       actualFollowerCount: s._count.follows,
     }));
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       subjects: formattedSubjects,
       total,
       page,
       totalPages: Math.ceil(total / limit),
     });
+    // Subjects change rarely — cache publicly for 5 min, stale for 1 hour
+    res.headers.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+    return res;
   } catch (error) {
     console.error('Subjects fetch error:', error);
     return NextResponse.json({ success: false, error: 'Failed to fetch subjects' }, { status: 500 });

@@ -1,20 +1,15 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
   Search,
-  Download,
-  Star,
-  Eye,
-  Bookmark,
   Filter,
   ChevronLeft,
   ChevronRight,
-  BookOpen,
   Upload,
   X,
   SlidersHorizontal,
@@ -22,9 +17,6 @@ import {
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
@@ -34,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import type { NoteCard, NoteFileType } from '@/types';
-import { formatRelativeTime, fileTypeIcon, fileTypeLabel, fileTypeColor } from '@/components/features/note-card';
+import { NoteCard as NoteCardComponent, NoteCardGridSkeleton } from '@/components/features/note-card';
 
 // ── Animation variants ──────────────────────────────────────────
 const gridContainer = {
@@ -66,128 +58,8 @@ async function fetchColleges() {
   return res.json();
 }
 
-// ── Note Card ───────────────────────────────────────────────────
-function NoteCardItem({ note, onClick, onBookmark }: { note: NoteCard; onClick: () => void; onBookmark: (e: React.MouseEvent) => void }) {
-  return (
-    <motion.div
-      whileHover={{ y: -4, transition: { duration: 0.2 } }}
-      whileTap={{ scale: 0.98 }}
-      className="cursor-pointer"
-      onClick={onClick}
-    >
-      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
-        {/* Color bar at top based on file type */}
-        <div className={`h-1 w-full ${fileTypeColor(note.fileType)}`} />
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="text-2xl shrink-0 mt-0.5">{fileTypeIcon(note.fileType)}</div>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
-                {note.title}
-              </h3>
-              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                {note.subject && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                    {note.subject.name}
-                  </Badge>
-                )}
-                {note.semester && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                    Sem {note.semester}
-                  </Badge>
-                )}
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
-                  {fileTypeLabel(note.fileType)}
-                </Badge>
-              </div>
-            </div>
-          </div>
-
-          {note.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{note.description}</p>
-          )}
-
-          {/* Tags */}
-          {note.tags && note.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {note.tags.slice(0, 3).map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-                  #{tag}
-                </Badge>
-              ))}
-              {note.tags.length > 3 && (
-                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-                  +{note.tags.length - 3}
-                </Badge>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 pt-0.5">
-            <Avatar className="size-5">
-              {note.uploader.avatarUrl && <AvatarImage src={note.uploader.avatarUrl} />}
-              <AvatarFallback className="text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                {note.uploader.name.charAt(0)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-[11px] text-muted-foreground truncate">{note.uploader.name}</span>
-            <span className="ml-auto text-[10px] text-muted-foreground">{formatRelativeTime(note.createdAt)}</span>
-          </div>
-
-          <div className="flex items-center justify-between pt-0.5">
-            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-              <span className="flex items-center gap-0.5"><Download className="size-3" />{note.downloadCount}</span>
-              <span className="flex items-center gap-0.5"><Star className="size-3 text-amber-500" />{note.avgRating > 0 ? note.avgRating.toFixed(1) : '—'}</span>
-              <span className="flex items-center gap-0.5"><Eye className="size-3" />{note.viewCount}</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 rounded-full hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
-              onClick={onBookmark}
-            >
-              <Bookmark className={`size-3.5 ${note.isBookmarked ? 'fill-emerald-500 text-emerald-500' : 'text-muted-foreground'}`} />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-}
-
-// ── Note Grid Skeleton ──────────────────────────────────────────
-function NoteGridSkeleton() {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {Array.from({ length: 9 }).map((_, i) => (
-        <Card key={i} className="border-0 shadow-sm">
-          <div className="h-1 w-full bg-muted" />
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <Skeleton className="size-8 rounded" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-3/4" />
-                <div className="flex gap-1.5">
-                  <Skeleton className="h-4 w-14 rounded-full" />
-                  <Skeleton className="h-4 w-10 rounded-full" />
-                </div>
-              </div>
-            </div>
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-2/3" />
-            <div className="flex items-center gap-2">
-              <Skeleton className="size-5 rounded-full" />
-              <Skeleton className="h-3 w-20" />
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
 // ── Empty State ─────────────────────────────────────────────────
-function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
+const EmptyState = memo(function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -204,7 +76,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
       <h3 className="font-semibold">{hasFilters ? 'No notes match your filters' : 'No notes yet'}</h3>
       <p className="text-sm text-muted-foreground mt-1 max-w-xs">
         {hasFilters
-          ? 'Try adjusting your filters or search terms to find what you\'re looking for.'
+          ? "Try adjusting your filters or search terms to find what you're looking for."
           : 'Be the first to upload notes and share knowledge with your peers.'}
       </p>
       {hasFilters && (
@@ -214,7 +86,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
       )}
     </motion.div>
   );
-}
+});
 
 // ── Main Notes Page ─────────────────────────────────────────────
 export function NotesPage() {
@@ -245,14 +117,18 @@ export function NotesPage() {
     };
   }, [searchInput]);
 
-  // Fetch subjects and colleges for filters
+  // Fetch subjects and colleges for filters — staleTime: Infinity since they rarely change
   const { data: subjectsData } = useQuery({
     queryKey: ['subjects-filter'],
     queryFn: fetchSubjects,
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
   });
   const { data: collegesData } = useQuery({
     queryKey: ['colleges-filter'],
     queryFn: fetchColleges,
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
   });
 
   // Build query params
@@ -266,10 +142,11 @@ export function NotesPage() {
   if (fileType && fileType !== '_all') queryParams.fileType = fileType;
   if (searchQuery) queryParams.q = searchQuery;
 
-  // Fetch notes
-  const { data: notesData, isLoading, isError } = useQuery({
+  // Fetch notes — keepPreviousData prevents the skeleton flash between pages
+  const { data: notesData, isLoading, isError, isFetching } = useQuery({
     queryKey: ['notes', queryParams],
     queryFn: () => fetchNotes(queryParams),
+    placeholderData: keepPreviousData,
   });
 
   const notes: NoteCard[] = notesData?.notes ?? [];
@@ -277,34 +154,36 @@ export function NotesPage() {
   const total: number = notesData?.total ?? 0;
   const hasFilters = subjectId !== '_all' || semester !== '_all' || fileType !== '_all' || searchQuery.trim() !== '';
 
-  const handleBookmark = useCallback(async (e: React.MouseEvent, note: NoteCard) => {
-    e.stopPropagation();
+  const handleBookmark = useCallback(async (noteId: string) => {
     // Prevent rapid double-clicks
-    if (bookmarkingRef.current.has(note.id)) return;
-    bookmarkingRef.current.add(note.id);
+    if (bookmarkingRef.current.has(noteId)) return;
+    bookmarkingRef.current.add(noteId);
+
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) { bookmarkingRef.current.delete(noteId); return; }
+
     try {
       if (note.isBookmarked) {
-        const res = await fetch(`/api/bookmarks?noteId=${note.id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/bookmarks?noteId=${noteId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('Failed');
       } else {
         const res = await fetch('/api/bookmarks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ noteId: note.id }),
+          body: JSON.stringify({ noteId }),
         });
         if (!res.ok) throw new Error('Failed');
       }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
-      queryClient.invalidateQueries({ queryKey: ['search'] });
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     } catch {
       toast.error('Failed to update bookmark. Please try again.');
     } finally {
-      bookmarkingRef.current.delete(note.id);
+      bookmarkingRef.current.delete(noteId);
     }
-  }, [queryClient]);
+  }, [notes, queryClient]);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSubjectId('_all');
     setSemester('_all');
     setSortBy('date');
@@ -312,7 +191,7 @@ export function NotesPage() {
     setSearchInput('');
     setSearchQuery('');
     setPage(1);
-  };
+  }, []);
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -326,6 +205,9 @@ export function NotesPage() {
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Browse Notes</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {total > 0 ? `${total} notes available` : 'Discover academic resources'}
+            {isFetching && !isLoading && (
+              <span className="ml-2 text-xs text-primary animate-pulse">Refreshing…</span>
+            )}
           </p>
         </div>
         <Button onClick={() => navigate('upload')} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm self-start">
@@ -434,7 +316,7 @@ export function NotesPage() {
 
       {/* ── Notes Grid ─────────────────────────────── */}
       {isLoading ? (
-        <NoteGridSkeleton />
+        <NoteCardGridSkeleton count={9} />
       ) : isError ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="rounded-2xl bg-destructive/10 p-4 mb-4">
@@ -455,10 +337,10 @@ export function NotesPage() {
           <AnimatePresence mode="popLayout">
             {notes.map((note) => (
               <motion.div key={note.id} variants={gridItem} layout>
-                <NoteCardItem
+                <NoteCardComponent
                   note={note}
                   onClick={() => navigate('note-detail', { id: note.id })}
-                  onBookmark={(e) => handleBookmark(e, note)}
+                  onBookmarkToggle={handleBookmark}
                 />
               </motion.div>
             ))}

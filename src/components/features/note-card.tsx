@@ -69,7 +69,9 @@ interface NoteCardProps {
 }
 
 // ── NoteCard Component ──────────────────────────────────────────
-export function NoteCard({ note, onBookmarkToggle, onClick }: NoteCardProps) {
+// React.memo prevents re-renders when parent re-renders but props are unchanged
+// — critical for large grid layouts with many cards.
+export const NoteCard = React.memo(function NoteCard({ note, onBookmarkToggle, onClick }: NoteCardProps) {
   return (
     <motion.div
       whileHover={{ y: -4, transition: { duration: 0.2 } }}
@@ -77,7 +79,7 @@ export function NoteCard({ note, onBookmarkToggle, onClick }: NoteCardProps) {
       className="cursor-pointer"
       onClick={onClick}
     >
-      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
+      <Card className="h-full border-0 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 220px' }}>
         {/* File type color strip at top */}
         <div className={`h-1.5 w-full ${fileTypeColorBar(note.fileType)}`} />
 
@@ -132,7 +134,7 @@ export function NoteCard({ note, onBookmarkToggle, onClick }: NoteCardProps) {
             </Avatar>
             <span className="text-[11px] text-muted-foreground truncate">{note.uploader.name}</span>
             <span className="ml-auto text-[10px] text-muted-foreground">
-              {formatRelativeTime(note.createdAt)}
+              {React.useMemo(() => formatRelativeTime(note.createdAt), [note.createdAt])}
             </span>
           </div>
 
@@ -206,7 +208,7 @@ export function NoteCard({ note, onBookmarkToggle, onClick }: NoteCardProps) {
       </Card>
     </motion.div>
   );
-}
+});
 
 // ── NoteCard Skeleton ───────────────────────────────────────────
 export function NoteCardSkeleton() {

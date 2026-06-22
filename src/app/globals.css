@@ -120,6 +120,10 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Improve text rendering performance */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
@@ -142,5 +146,38 @@
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: var(--muted-foreground);
+  }
+
+  /* GPU compositing hint for framer-motion animated elements.
+     Prevents paint on every frame by promoting to its own layer. */
+  .will-change-transform {
+    will-change: transform;
+  }
+
+  /* Reduce repaints during hover transitions */
+  .hover-gpu {
+    will-change: box-shadow, transform;
+  }
+
+  /* Skip rendering off-screen list rows — massive paint savings for
+     long notes feeds. containIntrinsicSize prevents layout shift. */
+  .content-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 220px;
+  }
+
+  /* Page-level container auto — skips off-screen page sections */
+  .content-auto-section {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 400px;
+  }
+}
+
+/* Smooth focus rings for accessibility */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
   }
 }

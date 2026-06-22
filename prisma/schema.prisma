@@ -3,20 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
-
-// ============================================================
-// PRODUCTION MIGRATION NOTE
-// ============================================================
-// To switch to Supabase PostgreSQL for production:
-// 1. Change provider above to "postgresql"
-// 2. Set DATABASE_URL in .env to your Supabase connection string:
-//    postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
-// 3. Run: bun run db:push
-// 4. Run: bun run db:generate
-// ============================================================
 
 // ============================================================
 // AUTH & USERS

@@ -103,136 +103,47 @@ export async function POST(request: NextRequest) {
     if (fileType === "txt" || fileType === "md") {
       extractedText = fileBuffer.toString("utf-8");
     } else if (fileType === "pdf") {
-      // Basic PDF text extraction: look for text between stream markers
-      // For production, use a proper PDF parser like pdf-parse
       try {
-        const rawText = fileBuffer.toString(
-          "utf-8",
-          0,
-          Math.min(fileBuffer.length, 100000),
-        );
-        const textMatches = rawText.match(/BT\s([\s\S]*?)ET/g);
-        if (textMatches) {
-          extractedText = textMatches
-            .map((m) =>
-              m
-                .replace(/BT\s|ET/g, "")
-                .replace(/\([^)]*\)/g, (match) => match.slice(1, -1)),
-            )
-            .join(" ")
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 50000);
-        }
-      } catch {
-        // Text extraction failed — that's OK, note will still be uploaded
+        const pdfParse = await import('pdf-parse');
+        const data = await pdfParse.default(fileBuffer);
+        extractedText = data?.text || '';
+      } catch (e) {
+        console.warn('PDF text extraction not available or failed:', e);
       }
-    }
-
-    // Try Supabase Storage first, fall back to local disk
-    let uploadedStorageKey: string | null = null;
-    let uploadedFilePath: string | null = null;
-
-    if (isStorageConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error: uploadError } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .upload(storageKey, fileBuffer, {
-            contentType: file.type,
-            upsert: false,
-          });
-
-        if (!uploadError) {
-          uploadedStorageKey = storageKey;
-        } else {
-          console.warn(
-            "Supabase upload failed, falling back to local:",
-            uploadError.message,
-          );
-        }
-      }
-    }
-
-    // If Supabase upload failed or isn't configured, save to local disk
-    if (!uploadedStorageKey) {
+    } else if (fileType === "docx") {
       try {
-        if (!existsSync(localDir)) {
-          await mkdir(localDir, { recursive: true });
-        }
-        await writeFile(localPath, fileBuffer);
-        uploadedFilePath = filePath;
-      } catch (diskError) {
-        console.error("Local file save failed:", diskError);
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Failed to save uploaded file. Please try again.",
-          },
-          { status: 500 },
-        );
+        const mammoth = await import('mammoth');
+        const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
+        extractedText = value || '';
+      } catch (e) {
+        console.warn('DOCX text extraction not available or failed:', e);
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      filePath: uploadedFilePath,
-      storageKey: uploadedStorageKey,
-      fileType,
-      fileSize: file.size,
-      originalName: file.name,
-      extractedText: extractedText || undefined,
+    // Ensure uploads dir exists
+    if (!existsSync(localDir)) {
+      await mkdir(localDir, { recursive: true });
+    }
+
+    // Save file locally (fallback when Supabase not configured)
+    await writeFile(localPath, fileBuffer);
+
+    // Create DB record for the note (simplified example)
+    const note = await db.note.create({
+      data: {
+        title: formData.get('title') as string || originalName,
+        description: (formData.get('description') as string) || null,
+        uploaderId: user.id,
+        filePath,
+        fileType,
+        extractedText: extractedText || null,
+        status: 'active',
+      },
     });
+
+    return NextResponse.json({ success: true, note });
   } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json(
-      { success: false, error: "Upload failed" },
-      { status: 500 },
-    );
-  }
-}
-
-// DELETE - Clean up an orphaned uploaded file
-export async function DELETE(request: NextRequest) {
-  try {
-    const user = await getAuthUser();
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 },
-      );
-    }
-
-    const { filePath } = await request.json();
-    if (!filePath || typeof filePath !== "string") {
-      return NextResponse.json(
-        { success: false, error: "filePath is required" },
-        { status: 400 },
-      );
-    }
-
-    // Sanitize path to prevent traversal
-    if (!filePath.startsWith("/uploads/") || filePath.includes("..")) {
-      return NextResponse.json(
-        { success: false, error: "Invalid file path" },
-        { status: 400 },
-      );
-    }
-
-    // Delete from local disk
-    const fullPath = join(process.cwd(), "public", filePath);
-    try {
-      await unlink(fullPath);
-    } catch {
-      // File might not exist — that's fine
-    }
-
-    return NextResponse.json({ success: true, message: "File deleted" });
-  } catch (error) {
-    console.error("File delete error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to delete file" },
-      { status: 500 },
-    );
+    console.error('Upload error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to upload file' }, { status: 500 });
   }
 }

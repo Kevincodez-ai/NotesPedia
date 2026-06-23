@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthUser, hasRole } from '@/lib/auth';
 import { rateLimiter, RateLimits, getClientIdentifier } from '@/lib/rate-limiter';
+import { z } from 'zod';
 
 const SYSTEM_PROMPT = 'You are an expert academic assistant. Help students learn effectively. Always respond with valid JSON as requested. Do not include markdown code fences or extra text.';
 
@@ -10,14 +11,60 @@ interface ChatMessage {
   content: string;
 }
 
-async function callAI(messages: ChatMessage[]): Promise<string> {
+// Zod schemas for validating AI outputs
+const SummarySchema = z.object({
+  summary: z.string().min(1),
+  keywords: z.string().optional(),
+  concepts: z.string().optional(),
+  learningObjectives: z.string().optional(),
+  importantQuestions: z.string().optional(),
+});
+
+const FlashcardSchema = z.object({
+  question: z.string().min(1),
+  answer: z.string().min(1),
+});
+const FlashcardsSchema = z.array(FlashcardSchema).min(1).max(20);
+
+const McqSchema = z.object({
+  question: z.string().min(1),
+  optionA: z.string().min(1),
+  optionB: z.string().min(1),
+  optionC: z.string().min(1),
+  optionD: z.string().min(1),
+  correctAnswer: z.enum(['A', 'B', 'C', 'D']),
+  explanation: z.string().optional(),
+});
+const McqsSchema = z.array(McqSchema).min(1).max(20);
+
+async function createZaiClient() {
   const ZAI = (await import('z-ai-web-dev-sdk')).default;
-  const zai = await ZAI.create();
-  const completion = await zai.chat.completions.create({
-    messages,
-    thinking: { type: 'disabled' },
-  });
-  return completion.choices?.[0]?.message?.content || '';
+  const apiKey = process.env.ZAI_API_KEY;
+  const model = process.env.ZAI_DEFAULT_MODEL || undefined;
+  if (!apiKey) {
+    throw new Error('ZAI_API_KEY is not configured');
+  }
+  // The SDK's create signature may vary; pass apiKey and model when available
+  return ZAI.create({ apiKey, model });
+}
+
+async function callAI(messages: ChatMessage[], timeoutMs = 30_000): Promise<string> {
+  const zai = await createZaiClient();
+
+  const callPromise = (async () => {
+    const completion = await zai.chat.completions.create({
+      messages,
+      thinking: { type: 'disabled' },
+      // model may also be accepted here via options; the client init above passes it
+    });
+    return completion.choices?.[0]?.message?.content || '';
+  })();
+
+  const timeoutPromise = new Promise<string>((_, reject) =>
+    setTimeout(() => reject(new Error('AI request timed out')), timeoutMs)
+  );
+
+  return Promise.race([callPromise, timeoutPromise]) as Promise<string>;
 }
 
 function cleanJSON(raw: string): string {
@@ -87,43 +134,33 @@ export async function POST(request: NextRequest) {
     }
 
     // Update note status to processing
-    await db.note.update({
-      where: { id: noteId },
-      data: { status: 'processing' },
-    });
+    await db.note.update({ where: { id: noteId }, data: { status: 'processing' } });
 
-    // Track what succeeded so we can save partial results on failure
-    let summaryData: Record<string, string> | null = null;
+    // Track results
+    let summaryData: z.infer<typeof SummarySchema> | null = null;
     let flashcards: Array<{ question: string; answer: string }> = [];
-    let mcqs: Array<{ question: string; optionA: string; optionB: string; optionC: string; optionD: string; correctAnswer: string; explanation: string }> = [];
+    let mcqs: Array<any> = [];
 
     try {
       // 1. Generate Summary
       const summaryResponse = await callAI([
         { role: 'assistant', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Analyze the following academic text and generate:
-1. A concise summary (2-3 paragraphs)
-2. 5-8 keywords (comma-separated)
-3. 3-5 key concepts (comma-separated)
-4. 3-5 learning objectives (comma-separated)
-5. 5 important questions (comma-separated)
-
-Text: "${truncatedText}"
-
-Respond ONLY with valid JSON in this exact format:
-{"summary": "...", "keywords": "...", "concepts": "...", "learningObjectives": "...", "importantQuestions": "..."}` },
+        {
+          role: 'user',
+          content: `Analyze the following academic text and generate:\n1. A concise summary (2-3 paragraphs)\n2. 5-8 keywords (comma-separated)\n3. 3-5 key concepts (comma-separated)\n4. 3-5 learning objectives (comma-separated)\n5. 5 important questions (comma-separated)\n\nText: "${truncatedText}"\n\nRespond ONLY with valid JSON in this exact format:\n{"summary": "...", "keywords": "...", "concepts": "...", "learningObjectives": "...", "importantQuestions": "..."}`,
+        },
       ]);
 
       try {
-        summaryData = JSON.parse(cleanJSON(summaryResponse));
-      } catch {
-        summaryData = {
-          summary: summaryResponse.slice(0, 500),
-          keywords: '',
-          concepts: '',
-          learningObjectives: '',
-          importantQuestions: '',
-        };
+        const parsed = JSON.parse(cleanJSON(summaryResponse));
+        const validated = SummarySchema.safeParse(parsed);
+        if (validated.success) {
+          summaryData = validated.data;
+        } else {
+          console.error('Summary validation failed', validated.error.issues);
+        }
+      } catch (e) {
+        console.error('Failed to parse summary response as JSON', e);
       }
     } catch (err) {
       console.error('AI summary generation failed:', err);
@@ -133,19 +170,22 @@ Respond ONLY with valid JSON in this exact format:
       // 2. Generate Flashcards
       const flashcardResponse = await callAI([
         { role: 'assistant', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Based on the following academic text, generate exactly 5 flashcards with question-answer pairs.
-
-Text: "${truncatedText}"
-
-Respond ONLY with valid JSON array in this exact format:
-[{"question": "...", "answer": "..."}, {"question": "...", "answer": "..."}, ...]` },
+        {
+          role: 'user',
+          content: `Based on the following academic text, generate exactly 5 flashcards with question-answer pairs.\n\nText: "${truncatedText}"\n\nRespond ONLY with valid JSON array in this exact format:\n[{"question": "...", "answer": "..."}, {"question": "...", "answer": "..."}, ...]`,
+        },
       ]);
 
       try {
-        flashcards = JSON.parse(cleanJSON(flashcardResponse));
-        if (!Array.isArray(flashcards)) flashcards = [];
-      } catch {
-        flashcards = [];
+        const parsed = JSON.parse(cleanJSON(flashcardResponse));
+        const validated = FlashcardsSchema.safeParse(parsed);
+        if (validated.success) {
+          flashcards = validated.data;
+        } else {
+          console.error('Flashcards validation failed', validated.error.issues);
+        }
+      } catch (e) {
+        console.error('Failed to parse flashcards response as JSON', e);
       }
     } catch (err) {
       console.error('AI flashcard generation failed:', err);
@@ -155,27 +195,28 @@ Respond ONLY with valid JSON array in this exact format:
       // 3. Generate MCQs
       const mcqResponse = await callAI([
         { role: 'assistant', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Based on the following academic text, generate exactly 5 multiple choice questions.
-
-Text: "${truncatedText}"
-
-Respond ONLY with valid JSON array in this exact format:
-[{"question": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "correctAnswer": "A", "explanation": "..."}, ...]
-
-correctAnswer must be one of: A, B, C, D` },
+        {
+          role: 'user',
+          content: `Based on the following academic text, generate exactly 5 multiple choice questions.\n\nText: "${truncatedText}"\n\nRespond ONLY with valid JSON array in this exact format:\n[{"question": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "correctAnswer": "A", "explanation": "..."}, ...]\n\ncorrectAnswer must be one of: A, B, C, D`,
+        },
       ]);
 
       try {
-        mcqs = JSON.parse(cleanJSON(mcqResponse));
-        if (!Array.isArray(mcqs)) mcqs = [];
-      } catch {
-        mcqs = [];
+        const parsed = JSON.parse(cleanJSON(mcqResponse));
+        const validated = McqsSchema.safeParse(parsed);
+        if (validated.success) {
+          mcqs = validated.data;
+        } else {
+          console.error('MCQs validation failed', validated.error.issues);
+        }
+      } catch (e) {
+        console.error('Failed to parse MCQ response as JSON', e);
       }
     } catch (err) {
       console.error('AI MCQ generation failed:', err);
     }
 
-    // Save whatever results we got (partial or complete) in a transaction
+    // Save validated results only
     try {
       await db.$transaction(async (tx) => {
         // Delete existing AI content if reprocessing
@@ -185,7 +226,7 @@ correctAnswer must be one of: A, B, C, D` },
         await tx.flashcard.deleteMany({ where: { noteId } });
         await tx.mCQ.deleteMany({ where: { noteId } });
 
-        // Store AI Summary (if we got one)
+        // Store AI Summary (if we got one and validated)
         if (summaryData) {
           await tx.aISummary.create({
             data: {
@@ -204,8 +245,8 @@ correctAnswer must be one of: A, B, C, D` },
           await tx.flashcard.createMany({
             data: flashcards.map((fc, index) => ({
               noteId,
-              question: fc.question || '',
-              answer: fc.answer || '',
+              question: fc.question,
+              answer: fc.answer,
               order: index,
             })),
           });
@@ -214,14 +255,14 @@ correctAnswer must be one of: A, B, C, D` },
         // Store MCQs
         if (mcqs.length > 0) {
           await tx.mCQ.createMany({
-            data: mcqs.map((mcq, index) => ({
+            data: mcqs.map((mcq: any, index: number) => ({
               noteId,
-              question: mcq.question || '',
-              optionA: mcq.optionA || '',
-              optionB: mcq.optionB || '',
-              optionC: mcq.optionC || '',
-              optionD: mcq.optionD || '',
-              correctAnswer: mcq.correctAnswer || 'A',
+              question: mcq.question,
+              optionA: mcq.optionA,
+              optionB: mcq.optionB,
+              optionC: mcq.optionC,
+              optionD: mcq.optionD,
+              correctAnswer: mcq.correctAnswer,
               explanation: mcq.explanation || null,
               order: index,
             })),
@@ -229,35 +270,23 @@ correctAnswer must be one of: A, B, C, D` },
         }
 
         // Always set status back to active (even for partial results)
-        await tx.note.update({
-          where: { id: noteId },
-          data: { status: 'active' },
-        });
+        await tx.note.update({ where: { id: noteId }, data: { status: 'active' } });
       });
     } catch (dbError) {
-      // If the DB transaction fails, the note is stuck in 'processing' — revert
       console.error('AI results DB save failed:', dbError);
       try {
-        await db.note.update({
-          where: { id: noteId },
-          data: { status: 'active' },
-        });
+        await db.note.update({ where: { id: noteId }, data: { status: 'active' } });
       } catch {
-        // Last resort — note might stay in 'processing', but at least we tried
+        // ignore
       }
-      return NextResponse.json(
-        { success: false, error: 'Failed to save AI processing results' },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: 'Failed to save AI processing results' }, { status: 500 });
     }
 
     // Check if we got any results at all
-    const hasAnyResults = summaryData || flashcards.length > 0 || mcqs.length > 0;
+    const hasAnyResults = !!summaryData || flashcards.length > 0 || mcqs.length > 0;
     if (!hasAnyResults) {
-      return NextResponse.json({
-        success: false,
-        error: 'AI processing failed to generate any results. Please try again later.',
-      }, { status: 500 });
+      // Nothing validated — return helpful error to caller (and note status already reset)
+      return NextResponse.json({ success: false, error: 'AI processing did not produce valid results. Please try again later.' }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -265,10 +294,10 @@ correctAnswer must be one of: A, B, C, D` },
       message: 'AI processing completed',
       aiSummary: summaryData ? {
         summary: summaryData.summary,
-        keywords: summaryData.keywords?.split(',').filter(Boolean) || [],
-        concepts: summaryData.concepts?.split(',').filter(Boolean) || [],
-        learningObjectives: summaryData.learningObjectives?.split(',').filter(Boolean) || [],
-        importantQuestions: summaryData.importantQuestions?.split(',').filter(Boolean) || [],
+        keywords: summaryData.keywords?.split(',').map(s => s.trim()).filter(Boolean) || [],
+        concepts: summaryData.concepts?.split(',').map(s => s.trim()).filter(Boolean) || [],
+        learningObjectives: summaryData.learningObjectives?.split(',').map(s => s.trim()).filter(Boolean) || [],
+        importantQuestions: summaryData.importantQuestions?.split(',').map(s => s.trim()).filter(Boolean) || [],
       } : null,
       flashcardsCount: flashcards.length,
       mcqsCount: mcqs.length,

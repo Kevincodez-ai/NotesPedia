@@ -19,6 +19,8 @@ const envConfig: EnvConfig = {
     'EMAIL_FROM',
     'NEXT_PUBLIC_APP_URL',
     'ALLOW_SEED',
+    'ZAI_API_KEY',
+    'ZAI_DEFAULT_MODEL',
   ],
   warnings: {
     JWT_SECRET: 'JWT_SECRET should be a strong random string in production (not the default)',
@@ -57,6 +59,9 @@ export function validateEnv(): { valid: boolean; errors: string[]; warnings: str
     }
     if (!process.env.RESEND_API_KEY) {
       validationWarnings.push('Resend API key is not configured. Email notifications will be disabled.');
+    }
+    if (!process.env.ZAI_API_KEY) {
+      validationWarnings.push('ZAI_API_KEY is not configured. AI features will not work.');
     }
   }
 

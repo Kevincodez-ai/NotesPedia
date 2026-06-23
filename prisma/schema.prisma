@@ -195,7 +195,7 @@ model Note {
   semester      Int?
   uploaderId    String
   version       Int      @default(1)
-  status        String   @default("active") // active, processing, flagged, removed, draft
+  status        String   @default("active") // active, processing, flagged, removed, draft, queued, failed
   isPublic      Boolean  @default(true)
   downloadCount Int      @default(0)
   viewCount     Int      @default(0)
@@ -206,6 +206,8 @@ model Note {
   qualityScore  Float    @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  aiProcessingError String?
+  aiProcessedAt  DateTime?
 
   uploader    User        @relation(fields: [uploaderId], references: [id])
   subject     Subject?    @relation(fields: [subjectId], references: [id])
@@ -409,10 +411,6 @@ model Comment {
   @@index([parentId])
 }
 
-// ============================================================
-// SOCIAL
-// ============================================================
-
 model Follow {
   id         String   @id @default(cuid())
   followerId String
@@ -433,10 +431,6 @@ model Follow {
   @@index([subjectId])
 }
 
-// ============================================================
-// NOTIFICATIONS
-// ============================================================
-
 model Notification {
   id        String   @id @default(cuid())
   userId    String
@@ -453,10 +447,6 @@ model Notification {
   @@index([isRead])
   @@index([createdAt])
 }
-
-// ============================================================
-// REPUTATION & ACHIEVEMENTS
-// ============================================================
 
 model ReputationLog {
   id        String   @id @default(cuid())
@@ -496,10 +486,6 @@ model UserAchievement {
   @@unique([userId, achievementId])
   @@index([userId])
 }
-
-// ============================================================
-// MODERATION
-// ============================================================
 
 model Report {
   id          String   @id @default(cuid())

@@ -1,0 +1,15 @@
+services:
+  - type: "worker"
+    name: "notespedia-ai-worker"
+    repo: "https://github.com/Kevincodez-ai/NotesPedia"
+    branch: "main"
+    env: "node"
+    region: "oregon"
+    plan: "starter"
+    buildCommand: "npm ci && npm run build && npx prisma generate"
+    startCommand: "npm run worker"
+    autoDeploy: true
+# Notes:
+# - Add required environment variables/secrets in the Render dashboard (not in this file):
+#   DATABASE_URL, JWT_SECRET, ZAI_API_KEY, ZAI_DEFAULT_MODEL, NEXT_PUBLIC_APP_URL, etc.
+# - Render's UI/secret manager should be used for secrets.
